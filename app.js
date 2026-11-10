@@ -43,11 +43,21 @@ function cleanMember(m) {
   if (o.needs && !o.consent) o.needs = '';
   return o;
 }
+const PET_FIELDS = { name: 80, species: 40, breed: 80, chip: 30, registry: 60, vet: 120, vetPhone: 30, needs: 1000, notes: 1000 };
+function cleanPet(a) {
+  const o = { id: idOf(a?.id), updatedAt: clampTs(a?.updatedAt) };
+  if (a?.deleted) { o.deleted = true; return o; }
+  for (const [k, max] of Object.entries(PET_FIELDS)) o[k] = str(a?.[k], max);
+  o.chip = o.chip.replace(/[^0-9A-Za-z]/g, '');
+  o.rabies = isoDate(a?.rabies);
+  return o;
+}
 function cleanGroup(g) {
   const o = {
     id: idOf(g?.id), name: str(g?.name, 120) || 'Grupo', meetingPoint: str(g?.meetingPoint, 300),
     lat: coord(g?.lat, 90), lng: coord(g?.lng, 180), notes: str(g?.notes, 2000), meta: {},
     members: arr(g?.members).filter(m => m && typeof m.id === 'string').slice(0, 200).map(cleanMember),
+    pets: arr(g?.pets).filter(a => a && typeof a.id === 'string').slice(0, 100).map(cleanPet),
   };
   if (o.lat === '' || o.lng === '') { o.lat = ''; o.lng = ''; }
   for (const k of GROUP_FIELDS) if (g?.meta?.[k] != null) o.meta[k] = clampTs(g.meta[k]);
@@ -74,6 +84,7 @@ function cleanState(s) {
     relays: arr(st.relays).filter(u => typeof u === 'string' && /^wss?:\/\/[^\s"'<>]+$/.test(u)).slice(0, 10),
     navOrder: arr(st.navOrder).filter(k => NAV_KEYS.includes(k)),
     blocked: arr(st.blocked).filter(k => /^[0-9a-f]{64}$/.test(k)),
+    chatNotify: st.chatNotify !== false, chatPreview: st.chatPreview !== false,
   };
   out.kit = Array.isArray(s.kit) ? s.kit.map(i => ({
     id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
@@ -85,6 +96,7 @@ function cleanState(s) {
   out.groups = arr(s.groups).filter(g => g && typeof g.id === 'string').map(g => ({
     ...cleanGroup(g), chat: cleanChatCfg(g.chat), syncPending: !!g.syncPending, syncRev: num(g.syncRev), sharedAt: str(g.sharedAt, 40), imported: !!g.imported, selfAdded: !!g.selfAdded,
   }));
+  out.chatRead = Object.fromEntries(Object.entries(s.chatRead && typeof s.chatRead === 'object' ? s.chatRead : {}).map(([k, v]) => [str(k, 80), num(v)]));
   out.chat = {};
   for (const [gid, list] of Object.entries(s.chat && typeof s.chat === 'object' ? s.chat : {})) {
     out.chat[gid] = arr(list).slice(-500).map(m => ({
@@ -403,10 +415,10 @@ function exportIcs() {
 
 // ---------- Notificações locais de validade ----------
 const native = () => !!window.Capacitor?.isNativePlatform?.();
+const nativeLN = () => { const C = window.Capacitor; return native() ? (C?.Plugins?.LocalNotifications || C?.registerPlugin?.('LocalNotifications')) : null; };
 async function scheduleNativeReminders() {
-  const C = window.Capacitor;
-  const LN = C?.Plugins?.LocalNotifications || C?.registerPlugin?.('LocalNotifications');
-  if (!native() || !LN) return;
+  const LN = nativeLN();
+  if (!LN) return;
   try {
     if ((await LN.checkPermissions()).display !== 'granted' && (await LN.requestPermissions()).display !== 'granted') return;
     const pending = await LN.getPending();
@@ -519,6 +531,7 @@ const ICONS = {
   lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>',
   wifioff: '<path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.8M19 12.9a10 10 0 0 0-2.3-1.6M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.7 5M12 20h.01"/>',
+  paw: '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.05Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/>',
   star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
 };
 const CAT_ICONS = { agua: 'drop', saude: 'health', energia: 'bolt', docs: 'doc', abrigo: 'tool', outros: 'box' };
@@ -736,7 +749,7 @@ function viewGroups() {
     <section class="card">
       <div class="toolbar">
         <h3><span class="cat-ic">${icon('users')}</span>${esc(g.name)}</h3> ${syncBadge(g)}<span class="spacer"></span>
-        <a class="btn" href="#/chat/${g.id}">${icon('chat')} Chat</a>
+        <a class="btn" href="#/chat/${g.id}">${icon('chat')} Chat${countBadge(unread(g.id), 'mensagens por ler')}</a>
         <button class="btn ghost" data-act="editGroup" data-id="${g.id}">Editar</button>
         <button class="btn ghost" data-act="shareGroup" data-id="${g.id}">Partilhar</button>
       </div>
@@ -752,6 +765,16 @@ function viewGroups() {
           ${m.needs ? `<div class="row-sub">Necessidades: ${esc(m.needs)}</div>` : ''}
         </div>${m.phone ? `<a class="btn" href="${telHref(m.phone)}" aria-label="Ligar a ${esc(m.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>
       <button class="btn ghost" data-act="addMember" data-id="${g.id}">+ Pessoa</button>
+      ${livePets(g).length ? `<h4 class="sub-h">${icon('paw')} Animais</h4><ul class="list">${livePets(g).map(a => {
+        const rd = daysLeft(a.rabies);
+        const rab = a.rabies ? `<span class="badge ${rd < 0 ? 'bad' : rd <= 30 ? 'warn' : 'good'}">antirrábica ${rd < 0 ? 'expirada' : 'até ' + fmtDate(a.rabies)}</span>` : '';
+        return `<li class="row"><div class="row-main" data-act="editPet" data-id="${g.id}" data-pid="${a.id}">
+          <div class="row-title">${esc(a.name)} <span class="badge">${esc([a.species, a.breed].filter(Boolean).join(' · ') || 'animal')}</span></div>
+          <div class="row-sub">${a.chip ? `Chip <span class="mono">${esc(a.chip)}</span>` : 'Sem chip registado'}${a.registry ? ' · ' + esc(a.registry) : ''} ${rab}</div>
+          ${a.needs ? `<div class="row-sub">Cuidados: ${esc(a.needs)}</div>` : ''}
+        </div>${a.vetPhone ? `<a class="btn" href="${telHref(a.vetPhone)}" aria-label="Ligar ao veterinário de ${esc(a.name)}">${icon('phone')}</a>` : ''}</li>`;
+      }).join('')}</ul>` : ''}
+      <button class="btn ghost" data-act="addPet" data-id="${g.id}">${icon('paw')} + Animal</button>
     </section>`).join('')
     : '<p class="empty">Crie um grupo para a família, vizinhos, condomínio ou equipa de trabalho.</p>'}`;
 }
@@ -785,6 +808,33 @@ function groupForm(g, defaults) {
     },
     // Só remove deste dispositivo; os outros membros mantêm o grupo.
     onDelete: g && (() => { S.groups = S.groups.filter(x => x !== g); delete (S.chat || {})[g.id]; startHub(); }),
+  });
+}
+function petForm(g, a) {
+  openForm({
+    title: a ? 'Editar animal' : 'Novo animal',
+    values: a || { species: 'Cão' },
+    fields: [
+      { k: 'name', label: 'Nome', required: true },
+      { k: 'species', label: 'Espécie', type: 'select', options: ['Cão', 'Gato', 'Ave', 'Coelho', 'Réptil', 'Outro'].map(x => [x, x]) },
+      { k: 'breed', label: 'Raça / descrição (cor, sinais)' },
+      { k: 'chip', label: 'Nº do microchip (15 dígitos)' },
+      { k: 'registry', label: 'Registo (ex.: SIAC) ou nº do boletim' },
+      { k: 'rabies', label: 'Vacina antirrábica válida até', type: 'date' },
+      { k: 'vet', label: 'Veterinário' },
+      { k: 'vetPhone', label: 'Telefone do veterinário', type: 'tel' },
+      { k: 'needs', label: 'Cuidados (medicação, alimentação, comportamento)', type: 'textarea' },
+      { k: 'notes', label: 'Notas', type: 'textarea' },
+    ],
+    onSave(v) {
+      if (v.chip && !/^\d{15}$/.test(v.chip.replace(/\s/g, '')) && !confirm('O nº do microchip costuma ter 15 dígitos. Guardar assim mesmo?')) return false;
+      v.chip = v.chip.replace(/\s/g, '');
+      v.updatedAt = Date.now();
+      g.pets ||= [];
+      if (a) Object.assign(a, v); else g.pets.push({ id: uid(), ...v });
+      markDirty(g);
+    },
+    onDelete: a && (() => { for (const k of Object.keys(a)) if (k !== 'id') delete a[k]; a.deleted = true; a.updatedAt = Date.now(); markDirty(g); }),
   });
 }
 function memberForm(g, m) {
@@ -953,6 +1003,8 @@ function viewSettings() {
   </section>
   <section class="card form">
     <h3>Chat dos grupos</h3>
+    <label class="check"><input type="checkbox" data-change="chatNotify" ${S.settings.chatNotify ? 'checked' : ''}> Notificar mensagens novas</label>
+    <label class="check"><input type="checkbox" data-change="chatPreview" ${S.settings.chatPreview ? 'checked' : ''}> Mostrar o texto na notificação</label>
     <label for="relays">Relays Nostr (um por linha; vazio = predefinidos)</label>
     <textarea id="relays" rows="3" data-change="relays" placeholder="${DEFAULT_RELAYS.join('\n')}">${esc((S.settings.relays || []).join('\n'))}</textarea>
     <p class="muted small">Os relays só recebem texto cifrado.</p>
@@ -981,6 +1033,7 @@ const sentState = new Map(); // id do evento de estado -> { gid, rev }
 const keying = new Set();
 const myPub = () => (S.nostr?.pk || '');
 const liveMembers = g => (g.members || []).filter(m => !m.deleted);
+const livePets = g => (g.pets || []).filter(a => !a.deleted);
 
 async function ensureIdentity() {
   await loadNostr();
@@ -989,7 +1042,7 @@ async function ensureIdentity() {
 
 // Só o que é partilhado com o grupo (sem a chave nem estado local deste dispositivo).
 function groupPayload(g) {
-  return { id: g.id, ...Object.fromEntries(GROUP_FIELDS.map(k => [k, g[k] ?? ''])), meta: g.meta || {}, members: g.members || [] };
+  return { id: g.id, ...Object.fromEntries(GROUP_FIELDS.map(k => [k, g[k] ?? ''])), meta: g.meta || {}, members: g.members || [], pets: g.pets || [] };
 }
 
 function mergeGroup(g, r) {
@@ -1000,15 +1053,16 @@ function mergeGroup(g, r) {
     const rt = Number(r.meta?.[k]) || 0;
     if (rt > (g.meta[k] || 0)) { g[k] = r[k]; g.meta[k] = rt; changed = true; }
   }
-  g.members ||= [];
-  for (const rm of Array.isArray(r.members) ? r.members : []) {
-    if (!rm || typeof rm.id !== 'string') continue;
-    const lm = g.members.find(m => m.id === rm.id);
-    if (!lm) { g.members.push({ ...rm }); changed = true; }
-    else if ((Number(rm.updatedAt) || 0) > (lm.updatedAt || 0)) {
-      for (const k of Object.keys(lm)) delete lm[k];
-      Object.assign(lm, rm);
-      changed = true;
+  for (const key of ['members', 'pets']) {
+    g[key] ||= [];
+    for (const rm of r[key]) {
+      const lm = g[key].find(m => m.id === rm.id);
+      if (!lm) { g[key].push({ ...rm }); changed = true; }
+      else if ((Number(rm.updatedAt) || 0) > (lm.updatedAt || 0)) {
+        for (const k of Object.keys(lm)) delete lm[k];
+        Object.assign(lm, rm);
+        changed = true;
+      }
     }
   }
   return changed;
@@ -1069,6 +1123,7 @@ function startHub() {
   if (!S.groups.some(g => g.chat)) { if (hub) { hub.close(); hub = null; } return; }
   ensureIdentity().then(() => {
     if (!hub) {
+      ui.hubStartedAt = Date.now();
       hub = new GroupHub({
         sk: S.nostr.sk,
         relays: S.settings.relays?.length ? S.settings.relays : DEFAULT_RELAYS,
@@ -1088,15 +1143,59 @@ function startHub() {
 }
 function restartHub() { if (hub) { hub.close(); hub = null; } startHub(); }
 
+// ---------- Notificações do chat ----------
+// Avisam de mensagens novas de outros membros quando não está a ver essa conversa.
+// Sem servidor de push, só chegam com a app aberta ou em segundo plano recente.
+const unread = gid => {
+  const since = S.chatRead?.[gid] || 0, me = myPub(), blocked = S.settings.blocked || [];
+  return (S.chat?.[gid] || []).filter(m => m.pk !== me && m.ts > since && !blocked.includes(m.pk)).length;
+};
+const unreadTotal = () => S.groups.reduce((n, g) => n + unread(g.id), 0);
+const countBadge = (n, label) => (n ? `<b class="dot-count" aria-label="${n} ${label}">${n > 99 ? '99+' : n}</b>` : '');
+function markChatRead(gid) {
+  if (document.hidden || route() !== 'chat' || ui.chatGroup !== gid) return;
+  if (unread(gid)) { S.chatRead = { ...(S.chatRead || {}), [gid]: Date.now() }; save(); }
+}
+async function notifyChat(gid, m) {
+  if (!S.settings.chatNotify) return;
+  const g = findGroup(gid);
+  if (!g || (!document.hidden && route() === 'chat' && ui.chatGroup === gid)) return;
+  const title = `${g.name} · ${m.name || 'Nova mensagem'}`;
+  const body = S.settings.chatPreview ? m.text.slice(0, 140) : 'Nova mensagem';
+  const url = '#/chat/' + gid;
+  const LN = nativeLN();
+  if (LN) {
+    try { await LN.schedule({ notifications: [{ id: Math.floor(Math.random() * 1e9), title, body, extra: { url }, schedule: { at: new Date(Date.now() + 300) } }] }); } catch { /* sem permissão */ }
+    return;
+  }
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const opts = { body, tag: 'ekit-chat-' + gid, renotify: true, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url } };
+  const reg = await navigator.serviceWorker?.getRegistration();
+  if (reg) reg.showNotification(title, opts); else new Notification(title, opts);
+}
+async function enableChatNotifications() {
+  const LN = nativeLN();
+  if (LN) { try { await LN.requestPermissions(); } catch { /* indisponível */ } }
+  else if ('Notification' in window) await Notification.requestPermission();
+  render();
+}
+
 function addMsg(gid, m) {
   if (S.settings.blocked?.includes(m.pk)) return;
   S.chat ||= {};
   const list = (S.chat[gid] ||= []);
   const old = list.find(x => x.id === m.id);
   if (old) { if (m.status === 'sent' && old.status !== 'sent') { old.status = 'sent'; delete old.ev; } }
-  else { list.push(m); list.sort((a, b) => a.ts - b.ts); if (list.length > 500) list.splice(0, list.length - 500); }
+  else {
+    list.push(m); list.sort((a, b) => a.ts - b.ts); if (list.length > 500) list.splice(0, list.length - 500);
+    // Mensagem nova de outra pessoa, recebida agora (não do histórico antigo)
+    if (m.pk !== myPub() && m.ts > (ui.hubStartedAt || Date.now()) - 2 * 60e3) notifyChat(gid, m);
+  }
   save();
   renderChatLog();
+  markChatRead(gid);
+  if (['grupos', 'painel', 'mais'].includes(route())) { if (!$('#dlg').open) render(); else ui.pendingRender = true; }
+  else updateNavBadges();
 }
 
 function renderChatLog() {
@@ -1190,6 +1289,8 @@ function viewChat() {
       <input name="text" placeholder="${navigator.onLine ? 'Mensagem para o grupo…' : 'Sem internet: fica em fila até voltar a rede'}" autocomplete="off" maxlength="2000" aria-label="Mensagem">
       <button class="btn primary">Enviar</button>
     </form>
+    ${S.settings.chatNotify && !native() && 'Notification' in window && Notification.permission === 'default'
+      ? '<p class="small"><button class="btn sm" data-act="enableChatNotif">Ativar notificações do chat</button></p>' : ''}
     <p class="muted small">A escrever como <strong>${esc(S.settings.myName || '—')}</strong> · <button class="linkbtn" data-act="setName">mudar nome</button> ·
       <button class="linkbtn" data-act="rotateChat" data-id="${g.id}">nova chave (retirar acesso)</button></p>
   </section>
@@ -1296,6 +1397,26 @@ function viewMore() {
   </ul></section>`;
 }
 
+// Contadores no menu: avisos graves (Avisos) e mensagens por ler (Grupos); somam-se em "Mais" se a secção lá estiver.
+function navBadge(k, order) {
+  const urgent = districtAlerts().filter(w => SEV[w.awarenessLevelID] >= 2).length;
+  const msgs = unreadTotal();
+  const top = order.slice(0, 4);
+  if (k === 'alertas') return countBadge(urgent, 'avisos graves');
+  if (k === 'grupos') return countBadge(msgs, 'mensagens por ler');
+  if (k === 'mais') return countBadge((top.includes('alertas') ? 0 : urgent) + (top.includes('grupos') ? 0 : msgs), 'novidades');
+  return '';
+}
+function updateNavBadges() {
+  const order = navOrder();
+  document.querySelectorAll('#nav a').forEach(a => {
+    const k = a.getAttribute('href').slice(2);
+    a.querySelector('.dot-count')?.remove();
+    const b = navBadge(k, order);
+    if (b) a.insertAdjacentHTML('beforeend', b);
+  });
+}
+
 function render() {
   const r = route();
   const urgent = districtAlerts().filter(w => SEV[w.awarenessLevelID] >= 2).length;
@@ -1305,7 +1426,7 @@ function render() {
     const [t, ic] = ROUTES[k];
     const current = k === r || (k === 'mais' && inMore);
     const cls = k === 'mais' ? 'more' : i < 4 ? 'pri' : 'sec';
-    return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${(k === 'alertas' || (k === 'mais' && !order.slice(0, 4).includes('alertas'))) && urgent ? `<b class="dot-count" aria-label="${urgent} avisos graves">${urgent}</b>` : ''}</a>`;
+    return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${navBadge(k, order)}</a>`;
   }).join('');
   const title = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
   $('#page-title').textContent = r === 'chat' ? 'Chat' : NAV_SHORT[r] || ROUTES[r][0];
@@ -1315,7 +1436,7 @@ function render() {
   $('#main').className = 'r-' + r;
   $('#main').innerHTML = pageHead(r, title) + `<div class="content">${ROUTES[r][2]()}</div>`;
   if (r === 'mapa') initMap();
-  if (r === 'chat') renderChatLog();
+  if (r === 'chat') { renderChatLog(); markChatRead(ui.chatGroup); }
   if (draft) { const i = $('.chat-form input'); if (i) i.value = draft; }
   $('#net').hidden = navigator.onLine;
 }
@@ -1325,6 +1446,7 @@ const findGroup = id => S.groups.find(g => g.id === id);
 const findList = id => S.lists.find(l => l.id === id);
 
 const actions = {
+  enableChatNotif: () => { enableChatNotifications(); return 'async'; },
   blockSender: d => {
     if (!confirm(`Bloquear "${d.name}" (#${d.pk.slice(0, 4)})? Deixa de ver as mensagens deste dispositivo.`)) return 'async';
     S.settings.blocked = [...new Set([...(S.settings.blocked || []), d.pk])];
@@ -1359,6 +1481,8 @@ const actions = {
   addGroup: () => groupForm(),
   editGroup: d => groupForm(findGroup(d.id)),
   addMember: d => memberForm(findGroup(d.id)),
+  addPet: d => petForm(findGroup(d.id)),
+  editPet: d => { const g = findGroup(d.id); petForm(g, g.pets.find(a => a.id === d.pid)); },
   editMember: d => { const g = findGroup(d.id); memberForm(g, g.members.find(m => m.id === d.mid)); },
   shareGroup: d => { shareGroup(findGroup(d.id)); return 'async'; },
   joinGroup: () => { joinGroup(); return 'async'; },
@@ -1428,6 +1552,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const k = e.target.dataset.change;
   if (!k) return;
+  if (e.target.type === 'checkbox') { S.settings[k] = e.target.checked; if (k === 'chatNotify' && e.target.checked) enableChatNotifications(); save(); return; }
   if (k === 'relays') { S.settings.relays = e.target.value.split(/\s+/).filter(u => /^wss?:\/\/\S+$/.test(u)); setTimeout(restartHub, 0); }
   else if (k === 'district') S.settings.district = e.target.value;
   else S.settings[k] = Math.max(1, Number(e.target.value) || 1);
@@ -1453,7 +1578,11 @@ window.addEventListener('offline', render);
 // Na app nativa os ficheiros já vêm no pacote; o service worker só é usado no site.
 if ('serviceWorker' in navigator && !native()) navigator.serviceWorker.register('./sw.js');
 scheduleNativeReminders();
-document.addEventListener('visibilitychange', () => { if (document.hidden) scheduleNativeReminders(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) scheduleNativeReminders();
+  else if (route() === 'chat') { markChatRead(ui.chatGroup); updateNavBadges(); }
+});
+try { nativeLN()?.addListener?.('localNotificationActionPerformed', a => { const u = a?.notification?.extra?.url; if (typeof u === 'string' && u.startsWith('#/chat/')) location.hash = u; }); } catch { /* sem plugin */ }
 // Primeira utilização: 3 perguntas para o kit fazer sentido desde o início.
 function onboarding() {
   S.settings.onboarded = true; save();

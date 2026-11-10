@@ -1,5 +1,5 @@
 // Service worker: app disponível offline + cache de mapa (Leaflet e mosaicos já vistos).
-const VERSION = 'ekit-v19';
+const VERSION = 'ekit-v20';
 const APP = ['./', './index.html', './styles.css', './app.js', './data.js', './pontos-encontro.json', './manifest.webmanifest', './privacidade.html', './icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './chat.js', './vendor/nostr-tools-2.25.1.js', './vendor/fonts/source-sans-3-latin-wght-normal.woff2', './vendor/fonts/source-serif-4-latin-wght-normal.woff2',
   './vendor/leaflet/leaflet.min.js', './vendor/leaflet/leaflet.min.css'];
 const TILES = 'ekit-tiles';
@@ -55,5 +55,10 @@ self.addEventListener('fetch', e => {
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: 'window' }).then(cs => (cs[0] ? cs[0].focus() : self.clients.openWindow('./'))));
+  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+    const c = cs[0];
+    if (!c) return self.clients.openWindow(url);
+    return c.focus().then(w => (w || c).navigate ? (w || c).navigate(url).catch(() => {}) : null);
+  }));
 });

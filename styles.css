@@ -320,3 +320,5 @@ main { flex: 1 0 auto; width: 100%; align-content: start; }
 .invite-code { font-family: ui-monospace, Consolas, monospace; font-size: 1.7rem; font-weight: 700; letter-spacing: .08em; text-align: center;
   padding: 14px 8px; margin: 8px 0 4px; border: 2px dashed var(--accent); border-radius: var(--radius); background: var(--accent-soft); color: var(--text); user-select: all; }
 input.mono { font-family: ui-monospace, Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.sub-h { display: flex; align-items: center; gap: 6px; font-family: var(--serif); font-size: 1rem; margin: 14px 0 4px; padding-top: 10px; border-top: 1px solid var(--line); }
+.sub-h .ic { color: var(--accent); }
