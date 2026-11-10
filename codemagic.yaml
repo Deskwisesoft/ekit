@@ -7,13 +7,20 @@
 #     (ou mudar o nome em integrations.app_store_connect abaixo).
 #  3. App Store Connect > Apps > "+": criar a app com o Bundle ID abaixo (registá-lo antes em developer.apple.com > Identifiers).
 #
-# A build é iniciada à mão no Codemagic (botão "Start new build"), para não gastar minutos em cada push.
+# A build arranca sozinha quando se envia uma etiqueta "ios-..." (ex.: git tag ios-1.0.0-3 && git push origin ios-1.0.0-3),
+# ou à mão no Codemagic ("Start new build"). Os pushes normais do site não gastam minutos.
 
 workflows:
   ios-testflight:
     name: eKit iOS → TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 60
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: 'ios-*'
+          include: true
     integrations:
       app_store_connect: Convocado ASC
     environment:

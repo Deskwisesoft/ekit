@@ -18,7 +18,14 @@ Uma vez só:
 3. **App Store Connect → Utilizadores e acesso → Integrações → App Store Connect API**: gerar uma chave com função *App Manager* e descarregar o ficheiro `.p8` (só pode ser descarregado uma vez).
 4. **Codemagic → Team settings → Integrations → Developer Portal → Connect**: usar a chave já existente **`Convocado ASC`** (ou criar uma com outro nome e atualizar `codemagic.yaml`), colar o *Issuer ID*, o *Key ID* e carregar o `.p8`. A chave fica só no Codemagic; nunca a coloque no repositório.
 
-Em cada versão:
+Em cada versão (forma rápida): enviar uma etiqueta `ios-...` para o GitHub arranca a build sozinha:
+
+```bash
+git tag ios-1.0.0-3
+git push origin ios-1.0.0-3
+```
+
+Ou à mão:
 
 1. No Codemagic, abrir a app `ekit` e carregar em **Check for configuration files** (só da primeira vez).
 2. **Start new build** → workflow *eKit iOS → TestFlight* → branch `main`.
