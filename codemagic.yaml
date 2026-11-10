@@ -68,6 +68,23 @@ workflows:
           agvtool new-marketing-version "$APP_VERSION"
           agvtool new-version -all "$BUILD_NUMBER"
 
+      - name: Manifesto de privacidade (exigido pela Apple)
+        script: |
+          set -e
+          cp ios-resources/PrivacyInfo.xcprivacy ios/App/App/PrivacyInfo.xcprivacy
+          gem list -i xcodeproj >/dev/null || gem install xcodeproj --no-document
+          ruby -e '
+            require "xcodeproj"
+            proj = Xcodeproj::Project.open("ios/App/App.xcodeproj")
+            target = proj.targets.find { |t| t.name == "App" }
+            group = proj.main_group.find_subpath("App", false) || proj.main_group
+            unless group.files.any? { |f| f.path == "PrivacyInfo.xcprivacy" }
+              ref = group.new_reference("PrivacyInfo.xcprivacy")
+              target.resources_build_phase.add_file_reference(ref)
+              proj.save
+              puts "PrivacyInfo.xcprivacy adicionado ao projeto"
+            end'
+
       - name: Assinatura automática
         script: xcode-project use-profiles
 
