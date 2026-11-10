@@ -1,6 +1,6 @@
 import {
   CATEGORIES, DEFAULT_KIT, EMERGENCY_NUMBERS, DEFAULT_LISTS, GUIDES,
-  IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL,
+  IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL, DISTRICT_CAPITALS, OVERPASS_URLS,
 } from './data.js';
 import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS, publishInvite, fetchInvite, newInviteCode, normalizeCode } from './chat.js';
 const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
@@ -82,6 +82,11 @@ function cleanPoint(p) {
     cap: Number.isFinite(Number(p?.cap)) && p?.cap !== null ? Math.round(Number(p.cap)) : null, t: str(p?.t, 30) };
   return o.lat === '' || o.lng === '' ? null : o;
 }
+function cleanService(x) {
+  const lat = Number(x?.lat), lng = Number(x?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { k: x?.k === 'police' ? 'police' : 'fire', n: str(x?.n, 160), op: str(x?.op, 120), phone: str(x?.phone, 40).replace(/[^\d+ ]/g, '').trim(), lat, lng };
+}
 function cleanState(s) {
   const base = seed();
   if (!s || typeof s !== 'object') return base;
@@ -97,6 +102,7 @@ function cleanState(s) {
     navOrder: arr(st.navOrder).filter(k => NAV_KEYS.includes(k)),
     blocked: arr(st.blocked).filter(k => /^[0-9a-f]{64}$/.test(k)),
     chatNotify: st.chatNotify !== false, chatPreview: st.chatPreview !== false,
+    autoDistrict: st.autoDistrict !== false,
   };
   out.kit = Array.isArray(s.kit) ? s.kit.map(i => ({
     id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
@@ -116,6 +122,9 @@ function cleanState(s) {
       status: m?.status === 'pending' ? 'pending' : 'sent', ...(m?.status === 'pending' && m?.ev ? { ev: m.ev } : {}),
     }));
   }
+  out.lastPos = Number.isFinite(s.lastPos?.lat) && Math.abs(s.lastPos.lat) <= 90 && Number.isFinite(s.lastPos?.lng) && Math.abs(s.lastPos.lng) <= 180
+    ? { lat: s.lastPos.lat, lng: s.lastPos.lng, at: num(s.lastPos.at) } : undefined;
+  out.services = s.services && Array.isArray(s.services.list) ? { at: num(s.services.at), list: s.services.list.map(cleanService).filter(Boolean).slice(0, 300) } : undefined;
   out.nostr = s.nostr && /^[0-9a-f]{64}$/.test(s.nostr.sk) && /^[0-9a-f]{64}$/.test(s.nostr.pk) ? { sk: s.nostr.sk, pk: s.nostr.pk } : undefined;
   out.pointsCache = s.pointsCache?.lisboa ? { at: num(s.pointsCache.at), lisboa: arr(s.pointsCache.lisboa).map(cleanPoint).filter(Boolean) } : undefined;
   out.alertsCache = s.alertsCache && Array.isArray(s.alertsCache.data) ? { at: num(s.alertsCache.at), data: s.alertsCache.data.filter(w => w && typeof w === 'object') } : null;
@@ -190,11 +199,84 @@ function locate(then) {
   if (!navigator.geolocation) { ui.geoError = 'Este dispositivo não suporta localização.'; return render(); }
   ui.geoError = 'A obter localização…'; render();
   navigator.geolocation.getCurrentPosition(
-    p => { ui.pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }; ui.geoError = ''; then ? then(ui.pos) : render(); },
+    p => { ui.pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }; ui.geoError = ''; onPosition(ui.pos); then ? then(ui.pos) : render(); },
     e => { ui.geoError = e.code === 1 ? 'Permissão de localização recusada.' : 'Não foi possível obter a localização.'; render(); },
     { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 },
   );
 }
+
+// A posição fica só neste dispositivo. Serve para o ponto mais próximo e para os avisos da zona.
+function onPosition(p) {
+  S.lastPos = { lat: +p.lat.toFixed(5), lng: +p.lng.toFixed(5), at: Date.now() };
+  save();
+  if (S.settings.autoDistrict) detectDistrict(p);
+}
+const myPos = () => ui.pos || S.lastPos || null;
+const norm = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+function districtFromCoords({ lat, lng }) {
+  if (lng < -20) return lng > -26.5 ? 'AOR' : lng < -30 ? 'AOC' : 'ACE';
+  if (lng < -15) return lat > 32.95 ? 'MPS' : lat >= 32.78 ? 'MCN' : 'MCS';
+  let best = 'LSB', bd = Infinity;
+  for (const [k, [la, ln]] of Object.entries(DISTRICT_CAPITALS)) { const d = distanceKm({ lat, lng }, { lat: la, lng: ln }); if (d < bd) { bd = d; best = k; } }
+  return best;
+}
+// Servidores públicos do OpenStreetMap: tenta o principal e, se estiver ocupado, o alternativo.
+async function overpass(q, ms = 15000) {
+  for (const base of OVERPASS_URLS) {
+    const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms);
+    try {
+      const res = await fetch(base + '?data=' + encodeURIComponent(q), { cache: 'no-store', signal: ac.signal });
+      if (res.ok) return await res.json();
+    } catch { /* ocupado ou sem rede: tenta o seguinte */ } finally { clearTimeout(t); }
+  }
+  throw new Error('overpass');
+}
+async function detectDistrict(p) {
+  let k = districtFromCoords(p);
+  // No continente, o OpenStreetMap diz o distrito exato (envia a posição arredondada a ~1 km).
+  if (navigator.onLine && p.lng > -10) {
+    try {
+      const d = await overpass(`[out:json][timeout:15];is_in(${p.lat.toFixed(2)},${p.lng.toFixed(2)});area._[boundary=administrative][admin_level=6];out tags;`);
+      const name = norm(d?.elements?.[0]?.tags?.name).replace(/^distrito d[eo]s? /, '');
+      const hit = Object.entries(IPMA_AREAS).find(([, v]) => norm(v) === name);
+      if (hit) k = hit[0];
+    } catch { /* sem rede: fica a aproximação */ }
+  }
+  if (k !== S.settings.district) { S.settings.district = k; save(); render(); toast('Avisos para ' + IPMA_AREAS[k] + ' (pela sua localização).'); }
+}
+function nearestOfficial(pos) {
+  let best = null;
+  POINTS.forEach((p, i) => { const d = distanceKm(pos, p); if (!best || d < best.d) best = { p: { ...p, i }, d }; });
+  return best;
+}
+
+// ---------- Bombeiros e polícia perto (OpenStreetMap) ----------
+async function findServices() {
+  const pos = myPos();
+  if (!pos) return locate(() => findServices());
+  if (!navigator.onLine) return toast('Precisa de internet para procurar. Os resultados ficam guardados.');
+  ui.servicesLoading = true; render();
+  const la = pos.lat.toFixed(2), ln = pos.lng.toFixed(2);
+  try {
+    const d = await overpass(`[out:json][timeout:20];nwr[amenity~"^(fire_station|police)$"](around:15000,${la},${ln});out tags center 200;`, 25000);
+    const list = (d?.elements || []).map(e => {
+      const t = e.tags || {}, k = t.amenity === 'police' ? 'police' : 'fire';
+      return cleanService({ k, n: t.name || t.official_name || (k === 'fire' ? 'Bombeiros' : 'Posto policial'), op: t.operator || '',
+        phone: String(t.phone || t['contact:phone'] || '').split(/[;,]/)[0], lat: e.lat ?? e.center?.lat, lng: e.lon ?? e.center?.lon });
+    }).filter(Boolean);
+    S.services = { at: Date.now(), list };
+    save();
+    if (!list.length) toast('Não foram encontrados bombeiros nem polícia num raio de 15 km.');
+  } catch { toast('O serviço do OpenStreetMap está ocupado. Tente daqui a alguns minutos.'); }
+  ui.servicesLoading = false; render();
+}
+function nearestServices(k, n) {
+  const pos = myPos(), list = (S.services?.list || []).filter(s => s.k === k);
+  return (pos ? list.map(s => ({ s, d: distanceKm(pos, s) })).sort((a, b) => a.d - b.d) : list.map(s => ({ s, d: null }))).slice(0, n);
+}
+const serviceRow = ({ s, d }) => `<li class="row"><div class="row-main"><div class="row-title">${esc(s.n)}</div>
+  <div class="row-sub">${esc([s.op, d != null ? fmtDist(d) : ''].filter(Boolean).join(' · '))}${s.phone ? '' : ' · sem telefone registado'}</div></div>
+  ${s.phone ? `<a class="btn" href="${telHref(s.phone)}" aria-label="Ligar para ${esc(s.n)}">${icon('phone')} ${esc(s.phone)}</a>` : ''}</li>`;
 
 // ---------- Utilitários ----------
 const $ = sel => document.querySelector(sel);
@@ -629,31 +711,51 @@ function viewDashboard() {
     st.expiring && `<a class="chip warn" href="#/kit" data-act="kitFilter" data-v="expiring">${st.expiring} a expirar</a>`,
     st.expired && `<a class="chip bad" href="#/kit" data-act="kitFilter" data-v="expiring">${st.expired} expirado(s)</a>`,
   ].filter(Boolean).join('');
+  const todo = CATEGORIES.flatMap(c => S.kit.filter(i => i.cat === c.id && need(i) > 0 && !isOk(i))).slice(0, 3);
+  const kitCard = `
+  <section class="card hero">
+    <div class="ring" style="--p:${st.pct}"><span>${st.pct}%</span></div>
+    <div class="hero-body">
+      <h2>Kit ${st.pct === 100 ? 'completo' : 'preparado a ' + st.pct + '%'}</h2>
+      <p class="muted">${S.settings.household} pessoa(s) · autonomia de 72 horas · <a href="#/definicoes">alterar</a></p>
+      ${chips ? `<div class="chips">${chips}</div>` : ''}
+      ${todo.length ? `<div class="next">
+        <div class="muted small">Próximos passos</div>
+        <ol class="next-list">${todo.map(i => `<li>${esc(i.name.replace(/\s*\(.*\)$/, ''))} <span class="muted">· ${need(i)} ${esc(i.unit)}</span></li>`).join('')}</ol>
+        <a class="btn primary" href="#/kit" data-act="kitFilter" data-v="missing">${st.pct ? 'Continuar o kit' : 'Começar o kit'} →</a>
+      </div>` : ''}
+    </div>
+  </section>`;
+  const pos = myPos(), near = pos && POINTS.length ? nearestOfficial(pos) : null;
+  const nearHtml = !pos
+    ? `<div class="locate-cta"><button class="btn" data-act="useLocation">${icon('pin')} Usar a minha localização</button>
+        <span class="muted small">Mostra o ponto oficial mais próximo e os avisos da sua zona.</span></div>`
+    : near && near.d <= 25
+      ? `<div class="meet near">${icon('pin')}<div class="meet-body">
+          <div class="muted small">Ponto oficial mais próximo · ${fmtDist(near.d)} para ${bearing(pos, near.p)}</div>
+          <strong>${esc(near.p.n)}</strong> <span class="muted small">${esc(near.p.m)}${near.p.t === 'Tsunami' ? ' · tsunami' : ''}</span>
+          ${navLinks(near.p, near.p.n)}</div></div>`
+      : '<p class="muted small">Ainda não há pontos oficiais publicados perto de si. Combine um ponto com a família em Grupos.</p>';
   return `
   ${top ? alertBanner(top, others.length) : ''}
+  ${st.pct < 100 ? kitCard : ''}
 
   <section class="card">
-    <a class="btn call big" href="tel:112">${icon('phone')} Ligar 112</a>
+    <a class="btn call-line big" href="tel:112">${icon('phone')} Ligar 112</a>
     ${favs.length ? `<div class="grid-buttons">${favs.map(c => `<a class="btn" href="${telHref(c.phone)}">${icon('phone')} ${esc(c.name)}</a>`).join('')}</div>` : ''}
     ${meeting.map(g => `<div class="meet">${icon('pin')}<div>
         <div class="muted small">Ponto de encontro · ${esc(g.name)}</div>
         <strong>${esc(g.meetingPoint || fmtCoords(g))}</strong>
         ${hasCoords(g) ? navLinks(g, g.meetingPoint) : ''}
       </div></div>`).join('') || '<p class="muted">Ainda não tem ponto de encontro. <a href="#/grupos">Criar grupo →</a></p>'}
+    ${nearHtml}
     <a href="#/mapa">Mapa dos pontos de encontro →</a>
   </section>
-
-  <section class="card hero">
-    <div class="ring" style="--p:${st.pct}"><span>${st.pct}%</span></div>
-    <div>
-      <h2>Kit ${st.pct === 100 ? 'completo' : 'preparado a ' + st.pct + '%'}</h2>
-      <p class="muted">${S.settings.household} pessoa(s) · autonomia de 72 horas · <a href="#/definicoes">alterar</a></p>
-      ${chips ? `<div class="chips">${chips}</div>` : ''}
-    </div>
-  </section>
+  ${st.pct < 100 ? '' : kitCard}
 
   <section class="card">
     <h3>${top ? 'Outros avisos' : 'Avisos'} — ${esc(IPMA_AREAS[S.settings.district] || S.settings.district)}</h3>
+    ${S.settings.autoDistrict && S.lastPos ? '<p class="muted small">Zona escolhida pela sua localização.</p>' : ''}
     ${others.length ? `<ul class="list">${others.slice(0, 3).map(alertCard).join('')}</ul>` : `<p class="muted">${top ? 'Sem outros avisos.' : 'Sem avisos ativos guardados.'}</p>`}
     <a href="#/alertas">Ver todos os alertas →</a>
   </section>
@@ -685,11 +787,11 @@ function viewKit() {
 function kitRow(i) {
   const n = need(i), ok = isOk(i), e = expiryState(i);
   const meta = [n > 0 ? `Necessário: ${n} ${esc(i.unit)}` : 'Opcional', i.location && 'Guardado em: ' + esc(i.location)].filter(Boolean).join(' · ');
-  return `<li class="row ${ok ? 'done' : ''}">
+  return `<li class="row kit-row ${ok ? 'done' : ''}">
     <button class="tick" data-act="fill" data-id="${i.id}" aria-label="Marcar como completo">${ok ? '✓' : ''}</button>
     <div class="row-main" data-act="editItem" data-id="${i.id}">
       <div class="row-title">${esc(i.name)}</div>
-      <div class="row-sub">${meta}${e ? ` <span class="badge ${e.cls}">${esc(e.label)}</span>` : (i.expires ? ' <span class="badge">sem validade definida</span>' : '')}</div>
+      <div class="row-sub">${meta}${e ? ` <span class="badge ${e.cls}">${esc(e.label)}</span>` : (i.expires && !ok ? ' · <span class="small">validade por definir</span>' : '')}</div>
     </div>
     <div class="stepper">
       <button data-act="dec" data-id="${i.id}" aria-label="Menos">−</button>
@@ -732,6 +834,28 @@ function viewContacts() {
         <div class="row-sub">${esc([c.relation, c.notes].filter(Boolean).join(' · '))}</div>
       </div>${c.phone ? `<a class="btn" href="${telHref(c.phone)}" aria-label="Ligar a ${esc(c.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>`
       : '<p class="muted">Família, vizinhos, médico… Os favoritos aparecem no Painel.</p>'}
+    ${S.groups.map(g => {
+      const ms = liveMembers(g).filter(m => m.name);
+      return ms.length ? `<h4 class="sub-h">${icon('users')} Grupo: ${esc(g.name)}</h4>
+      <ul class="list">${ms.map(m => `<li class="row"><div class="row-main" data-act="editMember" data-id="${g.id}" data-mid="${m.id}">
+        <div class="row-title">${esc(m.name)}${m.pk && m.pk === myPub() ? ' <span class="badge">eu</span>' : ''}</div>
+        <div class="row-sub">${esc(m.role || '')}${m.phone ? '' : (m.role ? ' · ' : '') + 'sem telefone'}</div>
+      </div>${m.phone ? `<a class="btn" href="${telHref(m.phone)}" aria-label="Ligar a ${esc(m.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>` : '';
+    }).join('')}
+    ${S.groups.some(g => liveMembers(g).length) ? '<p class="muted small">Os contactos dos grupos atualizam-se com o grupo. Edite-os aqui ou em Grupos.</p>' : ''}
+  </section>
+  <section class="card">
+    <h3>Bombeiros e polícia perto de si</h3>
+    ${S.services ? `
+      <h4 class="sub-h">${icon('alert')} Bombeiros</h4>
+      ${nearestServices('fire', 3).length ? `<ul class="list">${nearestServices('fire', 3).map(serviceRow).join('')}</ul>` : '<p class="muted small">Nenhum encontrado.</p>'}
+      <h4 class="sub-h">${icon('users')} Polícia (PSP / GNR)</h4>
+      ${nearestServices('police', 3).length ? `<ul class="list">${nearestServices('police', 3).map(serviceRow).join('')}</ul>` : '<p class="muted small">Nenhuma encontrada.</p>'}
+      <p class="muted small">Guardado em ${new Date(S.services.at).toLocaleDateString('pt-PT')} para usar sem internet. Fonte: OpenStreetMap (confirme os números).</p>`
+      : '<p class="muted small">Encontra os quartéis e esquadras mais próximos e guarda os telefones para usar sem internet.</p>'}
+    <p class="note small">Em perigo imediato ligue <strong>112</strong>. Estes números são para situações não urgentes.</p>
+    <button class="btn" data-act="findServices" ${ui.servicesLoading ? 'disabled' : ''}>${icon('pin')} ${ui.servicesLoading ? 'A procurar…' : S.services ? 'Atualizar perto de mim' : 'Procurar perto de mim'}</button>
+    <p class="muted small">Envia a posição aproximada (cerca de 1 km) ao OpenStreetMap.</p>
   </section>`;
 }
 function contactForm(c) {
@@ -1011,6 +1135,11 @@ function viewMap() {
     <div id="map" class="map"></div>
   </section>
   <section class="card">
+    <h3>Procurar pontos oficiais</h3>
+    <input type="search" id="pt-search" value="${esc(ui.ptQuery || '')}" placeholder="Nome, freguesia ou concelho" aria-label="Procurar pontos de encontro oficiais" autocomplete="off">
+    <ul class="list" id="pt-results">${pointResults()}</ul>
+  </section>
+  <section class="card">
     <h3>Pontos mais próximos</h3>
     ${ui.pos ? `<ul class="list">${nearest.map(({ p, d }) => `
       <li class="row"><div class="row-main">
@@ -1029,38 +1158,69 @@ function viewMap() {
   </section>`;
 }
 
-let map = null;
+function pointResults() {
+  const q = norm(ui.ptQuery);
+  if (q.length < 2) return '';
+  const pos = myPos();
+  const hits = POINTS.map((p, i) => ({ p, i })).filter(({ p }) => norm(`${p.n} ${p.f || ''} ${p.m}`).includes(q))
+    .map(x => ({ ...x, d: pos ? distanceKm(pos, x.p) : null })).sort((a, b) => (a.d ?? 0) - (b.d ?? 0));
+  if (!hits.length) return '<li class="row"><div class="row-main muted">Nenhum ponto oficial com esse nome.</div></li>';
+  return hits.slice(0, 15).map(({ p, i, d }) => `<li class="row"><div class="row-main" data-act="showPoint" data-i="${i}">
+      <div class="row-title">${esc(p.n)} <span class="badge ${p.t === 'Tsunami' ? 'warn' : ''}">${esc(p.m)}${p.t === 'Tsunami' ? ' · tsunami' : ''}</span></div>
+      <div class="row-sub">${esc(p.f || '')}${d != null ? (p.f ? ' · ' : '') + fmtDist(d) : ''}</div></div>
+    <button class="btn sm" data-act="showPoint" data-i="${i}">Ver no mapa</button></li>`).join('') + (hits.length > 15 ? `<li class="row"><div class="row-main muted small">+${hits.length - 15} resultados. Escreva mais para filtrar.</div></li>` : '');
+}
+document.addEventListener('input', e => {
+  if (e.target.id !== 'pt-search') return;
+  ui.ptQuery = e.target.value;
+  $('#pt-results').innerHTML = pointResults();
+});
+
+// O mapa é criado uma vez e reaproveitado: assim as atualizações do ecrã não interrompem o zoom nem o arrastar.
+let map = null, mapLayer = null, mapKey = '';
+const officialMarkers = [];
 function initMap() {
   const el = $('#map');
-  if (map) { ui.mapView = ui.recenter ? null : [map.getCenter(), map.getZoom()]; map.remove(); map = null; }
-  if (ui.recenter && ui.pos) ui.recenter = false;
   if (!el) return;
   if (!window.L) { el.innerHTML = '<p class="empty">Mapa indisponível sem internet. A lista funciona.</p>'; return; }
-  map = L.map(el);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, crossOrigin: true, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+  let fresh = false;
+  if (map) { el.replaceWith(map.getContainer()); map.invalidateSize(); }
+  else {
+    map = L.map(el, { zoomSnap: 0.5, wheelPxPerZoomLevel: 90 });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, crossOrigin: true, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+    mapLayer = L.layerGroup().addTo(map);
+    mapKey = ''; fresh = true;
+  }
+  const key = JSON.stringify([POINTS.length, ui.pos, S.groups.map(g => [g.lat, g.lng, g.meetingPoint, livePoints(g).map(x => [x.lat, x.lng, x.name])])]);
+  if (key !== mapKey) { mapKey = key; drawMarkers(); }
+  const bounds = S.groups.filter(hasCoords).map(g => [g.lat, g.lng]);
+  if (ui.recenter && ui.pos) { ui.recenter = false; map.setView([ui.pos.lat, ui.pos.lng], 15); }
+  else if (fresh) {
+    if (ui.pos) map.setView([ui.pos.lat, ui.pos.lng], 15);
+    else if (bounds.length) map.fitBounds(bounds, { maxZoom: 15, padding: [30, 30] });
+    else map.setView([38.72, -9.25], 11);
+  }
+}
+function drawMarkers() {
+  mapLayer.clearLayers();
+  officialMarkers.length = 0;
   const popup = (p, title) => `<strong>${esc(title)}</strong><br>${esc(p.m || '')}${p.f ? ' · ' + esc(p.f) : ''}${p.cap ? '<br>Capacidade: ' + Number(p.cap).toLocaleString('pt-PT') : ''}<br><span class="mono">${fmtCoords(p)}</span><br>${navLinks(p, title)}`;
-  const bounds = [];
-  POINTS.forEach(p => {
+  POINTS.forEach((p, i) => {
     const c = p.t === 'Tsunami' ? '#d97706' : '#2563eb';
-    L.circleMarker([p.lat, p.lng], { radius: 6, color: c, fillColor: c, fillOpacity: 0.7, weight: 1 }).bindPopup(popup(p, p.n)).addTo(map);
+    officialMarkers[i] = L.circleMarker([p.lat, p.lng], { radius: 6, color: c, fillColor: c, fillOpacity: 0.7, weight: 1 }).bindPopup(popup(p, p.n)).addTo(mapLayer);
   });
   S.groups.forEach(g => livePoints(g).filter(hasCoords).forEach(x => {
     L.circleMarker([x.lat, x.lng], { radius: 8, color: '#fff', fillColor: '#a78bfa', fillOpacity: 1, weight: 2 })
-      .bindPopup(popup({ ...x, m: `${g.name} · ${MEET_KINDS[x.kind]}` }, x.name)).addTo(map);
+      .bindPopup(popup({ ...x, m: `${g.name} · ${MEET_KINDS[x.kind]}` }, x.name)).addTo(mapLayer);
   }));
   S.groups.filter(hasCoords).forEach(g => {
     L.circleMarker([g.lat, g.lng], { radius: 10, color: '#fff', fillColor: '#7c3aed', fillOpacity: 1, weight: 3 })
-      .bindPopup(popup({ ...g, m: 'Grupo: ' + g.name }, g.meetingPoint || g.name)).addTo(map);
-    bounds.push([g.lat, g.lng]);
+      .bindPopup(popup({ ...g, m: 'Grupo: ' + g.name }, g.meetingPoint || g.name)).addTo(mapLayer);
   });
   if (ui.pos) {
-    L.circle([ui.pos.lat, ui.pos.lng], { radius: ui.pos.acc, color: '#16a34a', weight: 1, fillOpacity: 0.1 }).addTo(map);
-    L.circleMarker([ui.pos.lat, ui.pos.lng], { radius: 7, color: '#fff', fillColor: '#16a34a', fillOpacity: 1, weight: 3 }).bindPopup('Está aqui').addTo(map);
+    L.circle([ui.pos.lat, ui.pos.lng], { radius: ui.pos.acc, color: '#16a34a', weight: 1, fillOpacity: 0.1, interactive: false }).addTo(mapLayer);
+    L.circleMarker([ui.pos.lat, ui.pos.lng], { radius: 7, color: '#fff', fillColor: '#16a34a', fillOpacity: 1, weight: 3 }).bindPopup('Está aqui').addTo(mapLayer);
   }
-  if (ui.mapView) map.setView(ui.mapView[0], ui.mapView[1]);
-  else if (ui.pos) map.setView([ui.pos.lat, ui.pos.lng], 15);
-  else if (bounds.length) map.fitBounds(bounds, { maxZoom: 15, padding: [30, 30] });
-  else map.setView([38.72, -9.25], 11);
 }
 
 function viewSettings() {
@@ -1091,6 +1251,11 @@ function viewSettings() {
       <button class="btn" data-act="exportIcs">Validades para o calendário</button>
     </div>
     <p class="muted small">Com a app fechada, use o calendário.</p>
+  </section>
+  <section class="card form">
+    <h3>Localização</h3>
+    <label class="check"><input type="checkbox" data-change="autoDistrict" ${S.settings.autoDistrict ? 'checked' : ''}> Escolher a zona dos avisos pela localização</label>
+    <p class="muted small">A posição fica neste dispositivo. ${S.lastPos ? `<button class="linkbtn" data-act="forgetPos">Esquecer a última posição</button>` : ''}</p>
   </section>
   <section class="card form">
     <h3>Chat dos grupos</h3>
@@ -1523,7 +1688,7 @@ function render() {
   const title = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
   $('#page-title').textContent = r === 'chat' ? 'Chat' : NAV_SHORT[r] || ROUTES[r][0];
   document.title = r === 'painel' ? 'eKit · Preparação para emergências' : `${title} · eKit`;
-  if (map && r !== 'mapa') { map.remove(); map = null; ui.mapView = null; }
+  if (map && r !== 'mapa') { map.remove(); map = null; mapLayer = null; }
   const draft = $('.chat-form input')?.value;
   $('#main').className = 'r-' + r;
   $('#main').innerHTML = pageHead(r, title) + `<div class="content">${ROUTES[r][2]()}</div>`;
@@ -1592,6 +1757,17 @@ const actions = {
   delListItem: d => { const l = findList(d.id); l.items = l.items.filter(x => x.id !== d.iid); },
   fetchAlerts: () => { fetchAlerts(); return 'async'; },
   locate: () => { ui.recenter = true; locate(); return 'async'; },
+  useLocation: () => { locate(); return 'async'; },
+  findServices: () => { findServices(); return 'async'; },
+  forgetPos: () => { delete S.lastPos; ui.pos = null; },
+  showPoint: d => {
+    const p = POINTS[Number(d.i)], m = officialMarkers[Number(d.i)];
+    if (!p || !map) return 'async';
+    map.setView([p.lat, p.lng], 17);
+    m?.openPopup();
+    map.getContainer().scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return 'async';
+  },
   refreshLisboa: () => { refreshLisboa(); return 'async'; },
   copy: d => { navigator.clipboard?.writeText(d.v).then(() => toast('Copiado: ' + d.v), () => toast(d.v)); return 'async'; },
   enableNotif: async () => { await Notification.requestPermission(); render(); checkExpiryNotification(); return 'async'; },
@@ -1618,6 +1794,8 @@ function confirm112() {
     <h3>Não é uma emergência?</h3>
     <ul class="list">${alts.map(n => `<li class="row"><div class="row-main"><div class="row-title">${esc(n.name)}</div><div class="row-sub">${esc(n.note)}</div></div>
       <a class="btn" href="${telHref(n.phone)}">${esc(n.phone.replace(/(\d{3})(?=\d)/g, '$1 '))}</a></li>`).join('')}
+      ${['fire', 'police'].map(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => `<li class="row"><div class="row-main"><div class="row-title">${esc(s.n)}</div>
+        <div class="row-sub">${k === 'fire' ? 'Bombeiros mais próximos' : 'Polícia mais próxima'} · assuntos não urgentes</div></div><a class="btn" href="${telHref(s.phone)}">${esc(s.phone)}</a></li>`).join('')).join('')}
       <li class="row"><div class="row-main"><div class="row-title">Avisos meteorológicos</div><div class="row-sub">Informação do IPMA para a sua zona</div></div>
       <a class="btn" href="#/alertas" data-close>Ver avisos</a></li>
     </ul>
@@ -1650,7 +1828,7 @@ document.addEventListener('change', e => {
   if (!k) return;
   if (e.target.type === 'checkbox') { S.settings[k] = e.target.checked; if (k === 'chatNotify' && e.target.checked) enableChatNotifications(); save(); return; }
   if (k === 'relays') { S.settings.relays = e.target.value.split(/\s+/).filter(u => /^wss?:\/\/\S+$/.test(u)); setTimeout(restartHub, 0); }
-  else if (k === 'district') S.settings.district = e.target.value;
+  else if (k === 'district') { S.settings.district = e.target.value; S.settings.autoDistrict = false; }
   else S.settings[k] = Math.max(1, Number(e.target.value) || 1);
   save(); render();
 });
@@ -1707,4 +1885,6 @@ S.groups.forEach(setupGroupKey); // grupos antigos sem chave recebem uma
 startHub();
 setTimeout(() => S.groups.filter(g => g.chat).forEach(addSelfToGroup), 1500);
 checkExpiryNotification();
+navigator.permissions?.query({ name: 'geolocation' }).then(p => { if (p.state === 'granted') navigator.geolocation.getCurrentPosition(
+  x => { ui.pos = { lat: x.coords.latitude, lng: x.coords.longitude, acc: x.coords.accuracy }; onPosition(ui.pos); render(); }, () => {}, { maximumAge: 10 * 60e3, timeout: 20000 }); }).catch(() => {});
 if (navigator.onLine && (!S.alertsCache || Date.now() - S.alertsCache.at > 30 * 60e3)) fetchAlerts();

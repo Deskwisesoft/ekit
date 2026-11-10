@@ -115,6 +115,16 @@ export const IPMA_AREAS = {
   MPS: 'Porto Santo', AOR: 'Açores – Grupo Oriental', ACE: 'Açores – Grupo Central', AOC: 'Açores – Grupo Ocidental',
 };
 
+// Capitais de distrito (aproximação offline para escolher a zona dos avisos).
+export const DISTRICT_CAPITALS = {
+  AVR: [40.641, -8.654], BJA: [38.015, -7.865], BRG: [41.551, -8.420], BGC: [41.806, -6.757], CBO: [39.822, -7.491],
+  CBR: [40.205, -8.419], EVR: [38.571, -7.909], FAR: [37.019, -7.930], GDA: [40.537, -7.268], LRA: [39.744, -8.807],
+  LSB: [38.722, -9.139], PTG: [39.297, -7.428], PTO: [41.150, -8.611], STM: [39.236, -8.687], STB: [38.524, -8.888],
+  VCT: [41.693, -8.832], VRL: [41.300, -7.744], VIS: [40.657, -7.913],
+};
+// OpenStreetMap (Overpass): bombeiros, polícia e distrito da zona. Só com pedido do utilizador.
+export const OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+
 export const IPMA_WARNINGS_URL = 'https://api.ipma.pt/open-data/forecast/warnings/warnings_www.json';
 
 // Pontos de encontro oficiais (dados abertos). Cópia incluída em pontos-encontro.json;
