@@ -39,6 +39,7 @@ function cleanMember(m) {
   if (m?.deleted) { o.deleted = true; return o; }
   for (const k of MEMBER_FIELDS) o[k] = str(m?.[k], k === 'needs' ? 1000 : 200);
   o.consent = !!m?.consent;
+  o.pk = /^[0-9a-f]{64}$/.test(m?.pk) ? m.pk : '';
   if (o.needs && !o.consent) o.needs = '';
   return o;
 }
@@ -82,7 +83,7 @@ function cleanState(s) {
   out.contacts = arr(s.contacts).map(c => ({ id: idOf(c?.id), name: str(c?.name, 120), phone: str(c?.phone, 30), relation: str(c?.relation, 120), notes: str(c?.notes, 1000), priority: !!c?.priority }));
   out.lists = Array.isArray(s.lists) ? s.lists.map(l => ({ id: idOf(l?.id), name: str(l?.name, 120), items: arr(l?.items).map(i => ({ id: idOf(i?.id), text: str(i?.text, 300), done: !!i?.done })) })) : base.lists;
   out.groups = arr(s.groups).filter(g => g && typeof g.id === 'string').map(g => ({
-    ...cleanGroup(g), chat: cleanChatCfg(g.chat), syncPending: !!g.syncPending, syncRev: num(g.syncRev), sharedAt: str(g.sharedAt, 40), imported: !!g.imported,
+    ...cleanGroup(g), chat: cleanChatCfg(g.chat), syncPending: !!g.syncPending, syncRev: num(g.syncRev), sharedAt: str(g.sharedAt, 40), imported: !!g.imported, selfAdded: !!g.selfAdded,
   }));
   out.chat = {};
   for (const [gid, list] of Object.entries(s.chat && typeof s.chat === 'object' ? s.chat : {})) {
@@ -279,6 +280,21 @@ function importGroupPayload(raw) {
   if (location.hash !== '#/grupos') location.hash = '#/grupos'; else render();
 }
 
+// Quem cria ou entra num grupo passa a constar como membro, com o seu nome; chega aos outros pela sincronização.
+async function addSelfToGroup(g) {
+  if (!g || g.selfAdded || !S.settings.myName) return;
+  try { await ensureIdentity(); } catch { return; }
+  const id = 'dev-' + S.nostr.pk.slice(0, 16);
+  g.members ||= [];
+  const me = { id, pk: S.nostr.pk, name: S.settings.myName, phone: '', role: '', bitchat: '', needs: '', consentAt: '', consent: false, updatedAt: Date.now() };
+  const old = g.members.find(m => m.id === id);
+  if (!old) g.members.push(me);
+  else if (old.deleted) { for (const k of Object.keys(old)) delete old[k]; Object.assign(old, me); }
+  g.selfAdded = true;
+  markDirty(g);
+  render();
+}
+
 const relaysList = () => (S.settings.relays?.length ? S.settings.relays : DEFAULT_RELAYS);
 
 // Partilhar com código: o grupo vai cifrado com o próprio código; válido 24 h.
@@ -317,10 +333,14 @@ async function shareGroup(g) {
 function joinGroup(prefill = '') {
   openForm({
     title: 'Entrar num grupo',
-    values: { code: prefill },
-    fields: [{ k: 'code', label: 'Código (12 caracteres)', required: true }],
+    values: { code: prefill, myName: S.settings.myName },
+    fields: [
+      { k: 'code', label: 'Código (12 caracteres)', required: true },
+      { k: 'myName', label: 'O seu nome no grupo', required: true },
+    ],
     submitLabel: 'Entrar',
-    async onSave({ code }) {
+    async onSave({ code, myName }) {
+      S.settings.myName = str(myName, 40).trim() || S.settings.myName;
       if (normalizeCode(code).length !== 12) { toast('O código tem 12 caracteres.'); return false; }
       if (!navigator.onLine) { toast('Precisa de internet.'); return false; }
       toast('A procurar o grupo…');
@@ -328,6 +348,7 @@ function joinGroup(prefill = '') {
       const payload = await fetchInvite({ relays: relaysList(), code }).catch(() => null);
       if (!payload || typeof payload !== 'object') { toast('Código não encontrado ou expirado.'); return false; }
       importGroupPayload(payload);
+      addSelfToGroup(findGroup(str(payload.id, 80)));
     },
   });
   const i = $('#dlg input[name=code]');
@@ -724,9 +745,10 @@ function viewGroups() {
         ${hasCoords(g) ? `<div class="mono small muted">${fmtCoords(g)}</div>${navLinks(g, g.meetingPoint)}` : ''}</div></div>` : ''}
       ${g.notes ? `<p class="muted">${esc(g.notes)}</p>` : ''}
       ${g.chat && !g.sharedAt && !g.imported ? '<p class="note">Partilhe o grupo com cada membro para sincronizar.</p>' : ''}
+      ${liveMembers(g).length ? '' : '<p class="muted small">Ainda sem membros.</p>'}
       <ul class="list">${liveMembers(g).map(m => `
         <li class="row"><div class="row-main" data-act="editMember" data-id="${g.id}" data-mid="${m.id}">
-          <div class="row-title">${esc(m.name)}${m.role ? ` <span class="badge">${esc(m.role)}</span>` : ''}</div>
+          <div class="row-title">${esc(m.name)}${m.pk && m.pk === myPub() ? ' <span class="badge good">eu</span>' : ''}${m.role ? ` <span class="badge">${esc(m.role)}</span>` : ''}</div>
           ${m.needs ? `<div class="row-sub">Necessidades: ${esc(m.needs)}</div>` : ''}
         </div>${m.phone ? `<a class="btn" href="${telHref(m.phone)}" aria-label="Ligar a ${esc(m.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>
       <button class="btn ghost" data-act="addMember" data-id="${g.id}">+ Pessoa</button>
@@ -744,9 +766,12 @@ function groupForm(g, defaults) {
       { k: 'meetingPoint', label: 'Ponto de encontro (nome/descrição)' },
       { k: 'geo', type: 'geo' },
       { k: 'notes', label: 'Notas / plano do grupo', type: 'textarea' },
+      ...(!g && !S.settings.myName ? [{ k: 'myName', label: 'O seu nome no grupo', required: true }] : []),
     ],
     onSave(v) {
       delete v.official;
+      if (v.myName) S.settings.myName = str(v.myName, 40).trim();
+      delete v.myName;
       const now = Date.now();
       if (g) {
         for (const k of GROUP_FIELDS) if (String(v[k] ?? '') !== String(g[k] ?? '')) { g[k] = v[k]; (g.meta ||= {})[k] = now; }
@@ -755,6 +780,7 @@ function groupForm(g, defaults) {
         const ng = { id: uid(), members: [], ...v, meta: Object.fromEntries(GROUP_FIELDS.map(k => [k, now])) };
         S.groups.push(ng);
         setupGroupKey(ng);
+        setTimeout(() => addSelfToGroup(ng), 0);
       }
     },
     // Só remove deste dispositivo; os outros membros mantêm o grupo.
@@ -1049,7 +1075,7 @@ function startHub() {
         onChat: addMsg,
         onState: (gid, remote) => {
           const g = findGroup(gid);
-          if (g && mergeGroup(g, remote)) { save(); if (!$('#dlg').open) render(); }
+          if (g && mergeGroup(g, remote)) { save(); if (!$('#dlg').open) render(); else ui.pendingRender = true; }
         },
         onAck,
         onStatus: () => { renderChatLog(); if (route() === 'grupos' && !$('#dlg').open) render(); },
@@ -1415,6 +1441,9 @@ document.addEventListener('submit', e => {
   findList(id).items.push({ id: uid(), text: e.target.elements.text.value.trim(), done: false });
   save(); render();
 });
+// Atualizações que chegaram com uma janela aberta aparecem quando ela fecha.
+new MutationObserver(() => { if (!$('#dlg').open && ui.pendingRender) { ui.pendingRender = false; render(); } })
+  .observe($('#dlg'), { attributes: true, attributeFilter: ['open'] });
 $('#file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 window.addEventListener('online', () => { render(); fetchAlerts(); startHub(); });
@@ -1451,5 +1480,6 @@ loadPoints();
 if (!S.settings.onboarded) onboarding();
 S.groups.forEach(setupGroupKey); // grupos antigos sem chave recebem uma
 startHub();
+setTimeout(() => S.groups.filter(g => g.chat).forEach(addSelfToGroup), 1500);
 checkExpiryNotification();
 if (navigator.onLine && (!S.alertsCache || Date.now() - S.alertsCache.at > 30 * 60e3)) fetchAlerts();
