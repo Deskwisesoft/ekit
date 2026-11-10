@@ -1,7 +1,7 @@
 {
-  "name": "eKit · Preparação para emergências",
+  "name": "eKit · Preparados, juntos.",
   "short_name": "eKit",
-  "description": "Ferramenta cívica para preparar pessoas e famílias para emergências. Funciona offline e protege a privacidade.",
+  "description": "Preparar pessoas e famílias para o dia em que for preciso: kit de 72 horas, ponto de encontro e forma de avisar quem importa. Funciona sem internet e os dados ficam no seu telemóvel.",
   "lang": "pt-PT",
   "start_url": "./",
   "scope": "./",

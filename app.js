@@ -1846,10 +1846,21 @@ function pageHead(r, title) {
 
 function viewAbout() {
   return `
+  <section class="card mission">
+    <span class="label">Missão</span>
+    <h2>Preparar pessoas e famílias para o dia em que for preciso.</h2>
+    <p>Um kit de 72 horas, um ponto de encontro e uma forma de avisar quem importa. Funciona sem internet e os dados ficam no seu telemóvel.</p>
+    <span class="tagline">Preparados, juntos.</span>
+  </section>
   <section class="card">
-    <h3>A nossa missão</h3>
-    <p>Preparar pessoas e famílias para emergências: kit de 72 horas, pontos de encontro e comunicação.</p>
-    <p class="note"><strong>Não é um serviço oficial.</strong> Em emergência, ligue <a href="tel:112">112</a>.</p>
+    <h3>Os nossos valores</h3>
+    <div class="values">
+      <div><strong>${icon('heart')} Calma</strong><p>Informar sem assustar. O vermelho só para perigo real.</p></div>
+      <div><strong>${icon('shield')} Confiança</strong><p>Dados oficiais, fontes visíveis, nada inventado.</p></div>
+      <div><strong>${icon('lock')} Privacidade</strong><p>Os seus dados ficam consigo. Sem contas, sem rastreio.</p></div>
+      <div><strong>${icon('users')} Para todos</strong><p>Letra grande, poucas escolhas, linguagem simples.</p></div>
+    </div>
+    <p class="note"><strong>Não é um serviço oficial.</strong> Em perigo, ligue <a href="tel:112">112</a>.</p>
   </section>
 
   <section class="card">
@@ -2104,7 +2115,7 @@ function render() {
   }).join('');
   const title = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
   $('#page-title').textContent = r === 'chat' ? 'Chat' : NAV_SHORT[r] || ROUTES[r][0];
-  document.title = r === 'painel' ? 'eKit · Preparação para emergências' : `${title} · eKit`;
+  document.title = r === 'painel' ? 'eKit · Preparados, juntos.' : `${title} · eKit`;
   if (map && r !== 'mapa') { map.remove(); map = null; mapLayer = null; }
   const draft = $('.chat-form input')?.value;
   $('#main').className = 'r-' + r;
@@ -2295,7 +2306,7 @@ function onboarding() {
     submitLabel: 'Começar',
     values: { household: S.settings.household, district: S.settings.district, makeGroup: true },
     fields: [
-      { type: 'info', html: 'Fica tudo guardado neste dispositivo.' },
+      { type: 'info', html: '<strong class="tagline">Preparados, juntos.</strong><br>Preparar pessoas e famílias para o dia em que for preciso. Fica tudo guardado neste dispositivo.' },
       { k: 'household', label: 'Quantas pessoas vivem em casa?', type: 'number' },
       { k: 'district', label: 'Distrito (para os avisos)', type: 'select', options: Object.entries(IPMA_AREAS) },
       { k: 'makeGroup', label: 'Definir agora o ponto de encontro da família', type: 'checkbox' },

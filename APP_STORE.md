@@ -45,7 +45,7 @@ Se uma build falhar, os registos ficam em *Artifacts* (`xcodebuild_logs`).
 
 ## 4. App Store Connect
 
-- **Nome**: eKit – Kit de Emergência · **Subtítulo**: Preparar a família para emergências
+- **Nome**: eKit – Kit de Emergência · **Subtítulo**: Preparados, juntos.
 - **Categoria**: Utilidades (secundária: Estilo de vida) · **Idade**: 4+ (o chat é só entre membros convidados)
 - **URL de privacidade**: https://deskwisesoft.github.io/ekit/privacidade.html
 - **URL de suporte**: https://github.com/Deskwisesoft/ekit/issues
