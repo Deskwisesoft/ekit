@@ -7,13 +7,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>eKit · Preparação para emergências</title>
   <meta name="description" content="Ferramenta cívica e gratuita para preparar pessoas e famílias para emergências: kit de 72 horas, validades, pontos de encontro, avisos e comunicação de grupo. Funciona offline e protege a privacidade.">
-  <meta name="theme-color" content="#12325a">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151d27" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="eKit">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="preload" href="vendor/fonts/source-sans-3-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="vendor/fonts/source-serif-4-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="vendor/leaflet/leaflet.min.css">
@@ -25,9 +26,11 @@
   <header class="top">
     <div class="top-inner">
       <a class="brand" href="#/painel" aria-label="eKit, início">
-        <img src="icon.svg" alt="" width="34" height="34">
-        <span><span class="brand-name">eKit</span><span class="brand-tag">Preparação para emergências</span></span>
+        <img src="icon.svg" alt="" width="32" height="32">
+        <span class="brand-name">eKit</span>
       </a>
+      <span class="sep" aria-hidden="true">/</span>
+      <span id="page-title" class="page-title">Painel</span>
       <span id="net" class="offline" hidden>Sem internet</span>
       <a class="top-112" href="tel:112" aria-label="Ligar 112, número europeu de emergência">112</a>
     </div>

@@ -1206,6 +1206,7 @@ function render() {
     return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${(k === 'alertas' || (k === 'mais' && !order.slice(0, 4).includes('alertas'))) && urgent ? `<b class="dot-count" aria-label="${urgent} avisos graves">${urgent}</b>` : ''}</a>`;
   }).join('');
   const title = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
+  $('#page-title').textContent = r === 'chat' ? 'Chat' : NAV_SHORT[r] || ROUTES[r][0];
   document.title = r === 'painel' ? 'eKit · Preparação para emergências' : `${title} · eKit`;
   if (map && r !== 'mapa') { map.remove(); map = null; ui.mapView = null; }
   const draft = $('.chat-form input')?.value;
