@@ -17,6 +17,7 @@ Abrir http://localhost:8765. Para instalar no telemóvel, publicar em HTTPS (ex.
 - **Contactos**: números de emergência (112, SNS 24…) e contactos pessoais com chamada direta.
 - **Grupos**: família/vizinhos/equipa, cada grupo isolado; partilha por ficheiro cifrado (AES-256-GCM + PBKDF2).
 - **Mapa**: pontos de encontro dos grupos com coordenadas GPS, pontos oficiais, "mais próximos de mim" (funciona sem rede).
+- **Sincronização dos grupos**: depois da primeira partilha (ficheiro cifrado), tudo o que pertence ao grupo (nome, ponto de encontro, GPS, notas, pessoas) chega sozinho a todos os membros quando há internet. Vence a alteração mais recente, campo a campo e pessoa a pessoa; alterações feitas sem rede ficam em fila.
 - **Chat do grupo**: com internet via relays Nostr, cifrado com uma chave só do grupo (AES-256-GCM); mensagens escritas sem rede ficam em fila. Sem internet, passa para o **bitchat** (Bluetooth mesh): partilha de "estou bem + ponto de encontro + GPS" pela folha de partilha do sistema e atalho `bitchat://`.
 - **Listas**: evacuação, revisão semestral, listas próprias.
 - **Guia**: sismo, inundação, incêndio, apagão, calor, confinamento, evacuação.

@@ -1,5 +1,5 @@
 // Service worker: app disponível offline + cache de mapa (Leaflet e mosaicos já vistos).
-const VERSION = 'ekit-v6';
+const VERSION = 'ekit-v7';
 const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
 const APP = ['./', './index.html', './styles.css', './app.js', './data.js', './pontos-encontro.json', './manifest.webmanifest', './icon.svg', './chat.js', './vendor/nostr-tools-2.25.1.js',
   LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css'];

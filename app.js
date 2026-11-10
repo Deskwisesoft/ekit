@@ -2,7 +2,7 @@ import {
   CATEGORIES, DEFAULT_KIT, EMERGENCY_NUMBERS, DEFAULT_LISTS, GUIDES,
   IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL,
 } from './data.js';
-import { GroupChat, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS } from './chat.js';
+import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS } from './chat.js';
 
 // ---------- Estado (guardado só neste dispositivo) ----------
 const KEY = 'ekit:v1';
@@ -184,17 +184,22 @@ async function importFile(file) {
   if (pkg.app !== 'ekit') return toast('Este ficheiro não é do eKit.');
   const apply = payload => {
     if (pkg.type === 'group') {
-      const existing = S.groups.findIndex(g => g.id === payload.id);
-      if (existing >= 0) {
-        if (!confirm(`Já existe o grupo "${payload.name}". Substituir pela versão importada?`)) return;
-        S.groups[existing] = payload;
-      } else S.groups.push(payload);
-      toast(`Grupo "${payload.name}" importado.`);
+      const existing = findGroup(payload.id);
+      if (existing) {
+        mergeGroup(existing, payload);
+        if (payload.chat?.key && payload.chat.key !== existing.chat?.key) existing.chat = payload.chat;
+        toast(`Grupo "${existing.name}" atualizado.`);
+      } else {
+        S.groups.push({ ...payload, imported: true, meta: payload.meta || {}, members: payload.members || [] });
+        toast(`Grupo "${payload.name}" importado. As alterações passam a chegar sozinhas.`);
+      }
+      setTimeout(() => { S.groups.forEach(setupGroupKey); startHub(); }, 0);
       location.hash = '#/grupos';
     } else if (pkg.type === 'backup') {
       if (!confirm('Substituir TODOS os dados deste dispositivo pela cópia de segurança?')) return;
-      S = { ...seed(), ...payload, alertsCache: S.alertsCache };
+      S = { ...seed(), ...payload, alertsCache: S.alertsCache, nostr: S.nostr, chat: S.chat };
       toast('Cópia de segurança restaurada.');
+      setTimeout(restartHub, 0);
     }
     save(); render();
   };
@@ -510,7 +515,7 @@ function contactForm(c) {
 function viewGroups() {
   return `
   <div class="toolbar">
-    <p class="muted small">Cada grupo é independente: só é partilhado o que está nesse grupo, por ficheiro cifrado.</p>
+    <p class="muted small">Cada grupo é independente. Partilhe-o uma vez com cada membro (ficheiro cifrado); depois, com internet, todas as alterações chegam sozinhas a todos.</p>
     <span class="spacer"></span>
     <button class="btn" data-act="import">Importar</button>
     <button class="btn primary" data-act="addGroup">+ Grupo</button>
@@ -518,7 +523,7 @@ function viewGroups() {
   ${S.groups.length ? S.groups.map(g => `
     <section class="card">
       <div class="toolbar">
-        <h3>👥 ${esc(g.name)}</h3><span class="spacer"></span>
+        <h3>👥 ${esc(g.name)}</h3> ${syncBadge(g)}<span class="spacer"></span>
         <a class="btn" href="#/chat/${g.id}">${icon('chat')} Chat</a>
         <button class="btn ghost" data-act="editGroup" data-id="${g.id}">Editar</button>
         <button class="btn ghost" data-act="exportGroup" data-id="${g.id}">Partilhar</button>
@@ -527,7 +532,8 @@ function viewGroups() {
         <div class="muted small">Ponto de encontro</div><strong>${esc(g.meetingPoint || 'sem nome')}</strong>
         ${hasCoords(g) ? `<div class="mono small muted">${fmtCoords(g)}</div>${navLinks(g, g.meetingPoint)}` : ''}</div></div>` : ''}
       ${g.notes ? `<p class="muted">${esc(g.notes)}</p>` : ''}
-      <ul class="list">${(g.members || []).map(m => `
+      ${g.chat && !g.sharedAt && !g.imported ? '<p class="note">Partilhe este grupo com cada membro (botão Partilhar). A partir daí, tudo o que mudar no grupo é sincronizado automaticamente.</p>' : ''}
+      <ul class="list">${liveMembers(g).map(m => `
         <li class="row"><div class="row-main" data-act="editMember" data-id="${g.id}" data-mid="${m.id}">
           <div class="row-title">${esc(m.name)}${m.role ? ` <span class="badge">${esc(m.role)}</span>` : ''}</div>
           ${m.needs ? `<div class="row-sub">🩺 ${esc(m.needs)}</div>` : ''}
@@ -548,8 +554,20 @@ function groupForm(g, defaults) {
       { k: 'geo', type: 'geo' },
       { k: 'notes', label: 'Notas / plano do grupo', type: 'textarea' },
     ],
-    onSave(v) { delete v.official; if (g) Object.assign(g, v); else S.groups.push({ id: uid(), members: [], ...v }); },
-    onDelete: g && (() => { S.groups = S.groups.filter(x => x !== g); }),
+    onSave(v) {
+      delete v.official;
+      const now = Date.now();
+      if (g) {
+        for (const k of GROUP_FIELDS) if (String(v[k] ?? '') !== String(g[k] ?? '')) { g[k] = v[k]; (g.meta ||= {})[k] = now; }
+        markDirty(g);
+      } else {
+        const ng = { id: uid(), members: [], ...v, meta: Object.fromEntries(GROUP_FIELDS.map(k => [k, now])) };
+        S.groups.push(ng);
+        setupGroupKey(ng);
+      }
+    },
+    // Só remove deste dispositivo; os outros membros mantêm o grupo.
+    onDelete: g && (() => { S.groups = S.groups.filter(x => x !== g); delete (S.chat || {})[g.id]; startHub(); }),
   });
 }
 function memberForm(g, m) {
@@ -563,14 +581,16 @@ function memberForm(g, m) {
       { k: 'bitchat', label: 'Nome no bitchat (para mensagens privadas sem internet)' },
       { k: 'needs', label: 'Necessidades especiais (mobilidade, medicação…)', type: 'textarea' },
       { type: 'info', html: 'Informação de saúde é uma <strong>categoria especial</strong> de dados (art. 9.º RGPD). Só guarde com o consentimento explícito da pessoa.' },
-      { k: 'consent', label: 'A pessoa deu consentimento para guardar e partilhar estes dados neste grupo', type: 'checkbox' },
+      { k: 'consent', label: 'A pessoa deu consentimento para guardar estes dados e partilhá-los (cifrados) com os membros deste grupo', type: 'checkbox' },
     ],
     onSave(v) {
       if (v.needs && !v.consent) { toast('Para guardar necessidades especiais é preciso o consentimento.'); return false; }
       v.consentAt = v.consent ? (m?.consentAt || new Date().toISOString()) : '';
+      v.updatedAt = Date.now();
       if (m) Object.assign(m, v); else g.members.push({ id: uid(), ...v });
+      markDirty(g);
     },
-    onDelete: m && (() => { g.members = g.members.filter(x => x !== m); }),
+    onDelete: m && (() => { for (const k of Object.keys(m)) if (k !== 'id') delete m[k]; m.deleted = true; m.updatedAt = Date.now(); markDirty(g); }),
   });
 }
 
@@ -730,37 +750,121 @@ function viewSettings() {
   </section>`;
 }
 
-// ---------- Chat do grupo (Nostr com internet, bitchat sem internet) ----------
-let session = null; // GroupChat ativo
+// ---------- Rede dos grupos: sincronização + chat (Nostr), bitchat sem internet ----------
+// Tudo o que pertence a um grupo (nome, ponto de encontro, GPS, notas, pessoas) é publicado
+// cifrado com a chave do grupo e fundido nos outros dispositivos: vence a alteração mais recente,
+// campo a campo e pessoa a pessoa. Pessoas removidas ficam como "lápide" para a remoção se propagar.
+const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes'];
+let hub = null;
+const sentState = new Map(); // id do evento de estado -> { gid, rev }
+const keying = new Set();
 const myPub = () => (S.nostr?.pk || '');
+const liveMembers = g => (g.members || []).filter(m => !m.deleted);
 
 async function ensureIdentity() {
   await loadNostr();
   if (!S.nostr) { const sk = newIdentity(); S.nostr = { sk, pk: pubkeyOf(sk) }; save(); }
 }
 
-function syncChat(r) {
-  const g = r === 'chat' ? findGroup(ui.chatGroup) : null;
-  if (!g?.chat) { if (session) { session.close(); session = null; } return; }
-  if (session && session.cfg === g.chat) { if (navigator.onLine && !session.connected) session.connect(); return renderChatLog(); }
-  if (session) session.close();
-  session = null;
-  ensureIdentity().then(() => {
-    if (route() !== 'chat' || findGroup(ui.chatGroup) !== g || session) return;
-    session = new GroupChat({
-      cfg: g.chat, sk: S.nostr.sk, relays: S.settings.relays?.length ? S.settings.relays : DEFAULT_RELAYS,
-      onMessage: m => addMsg(g.id, m),
-      onAck: id => {
-        const m = (S.chat?.[g.id] || []).find(x => x.id === id);
-        if (m && m.status !== 'sent') { m.status = 'sent'; delete m.ev; save(); renderChatLog(); }
-      },
-      onStatus: renderChatLog,
-    });
-    session.flush = () => (S.chat?.[g.id] || []).filter(m => m.status === 'pending' && m.ev).forEach(m => session.publish(m.ev));
-    session.connect();
-    renderChatLog();
-  }).catch(() => toast('Não foi possível carregar o módulo de chat.'));
+// Só o que é partilhado com o grupo (sem a chave nem estado local deste dispositivo).
+function groupPayload(g) {
+  return { id: g.id, ...Object.fromEntries(GROUP_FIELDS.map(k => [k, g[k] ?? ''])), meta: g.meta || {}, members: g.members || [] };
 }
+
+function mergeGroup(g, r) {
+  let changed = false;
+  g.meta ||= {};
+  for (const k of GROUP_FIELDS) {
+    const rt = Number(r.meta?.[k]) || 0;
+    if (rt > (g.meta[k] || 0)) { g[k] = r[k]; g.meta[k] = rt; changed = true; }
+  }
+  g.members ||= [];
+  for (const rm of Array.isArray(r.members) ? r.members : []) {
+    if (!rm || typeof rm.id !== 'string') continue;
+    const lm = g.members.find(m => m.id === rm.id);
+    if (!lm) { g.members.push({ ...rm }); changed = true; }
+    else if ((Number(rm.updatedAt) || 0) > (lm.updatedAt || 0)) {
+      for (const k of Object.keys(lm)) delete lm[k];
+      Object.assign(lm, rm);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function setupGroupKey(g) {
+  if (g.chat || keying.has(g.id)) return;
+  keying.add(g.id);
+  newChatConfig().then(cfg => {
+    keying.delete(g.id);
+    g.chat = cfg;
+    markDirty(g);
+    startHub();
+    render();
+  });
+}
+
+let syncTimer;
+function markDirty(g) {
+  g.syncPending = true;
+  g.syncRev = (g.syncRev || 0) + 1;
+  save();
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, 600);
+}
+
+async function syncNow() {
+  if (!hub?.connected) return;
+  for (const g of S.groups.filter(x => x.chat && x.syncPending)) {
+    const ev = await hub.buildState(g.chat, groupPayload(g));
+    sentState.set(ev.id, { gid: g.id, rev: g.syncRev });
+    hub.publish(ev);
+  }
+}
+
+function flushChats() {
+  for (const [gid, list] of Object.entries(S.chat || {})) {
+    if (!findGroup(gid)) continue;
+    list.filter(m => m.status === 'pending' && m.ev).forEach(m => hub.publish(m.ev));
+  }
+}
+
+function onAck(id) {
+  const st = sentState.get(id);
+  if (st) {
+    sentState.delete(id);
+    const g = findGroup(st.gid);
+    if (g && g.syncRev === st.rev && g.syncPending) { g.syncPending = false; save(); if (route() === 'grupos' && !$('#dlg').open) render(); }
+    return;
+  }
+  for (const list of Object.values(S.chat || {})) {
+    const m = list.find(x => x.id === id);
+    if (m && m.status !== 'sent') { m.status = 'sent'; delete m.ev; save(); renderChatLog(); return; }
+  }
+}
+
+function startHub() {
+  if (!S.groups.some(g => g.chat)) { if (hub) { hub.close(); hub = null; } return; }
+  ensureIdentity().then(() => {
+    if (!hub) {
+      hub = new GroupHub({
+        sk: S.nostr.sk,
+        relays: S.settings.relays?.length ? S.settings.relays : DEFAULT_RELAYS,
+        onChat: addMsg,
+        onState: (gid, remote) => {
+          const g = findGroup(gid);
+          if (g && mergeGroup(g, remote)) { save(); if (!$('#dlg').open) render(); }
+        },
+        onAck,
+        onStatus: () => { renderChatLog(); if (route() === 'grupos' && !$('#dlg').open) render(); },
+      });
+      hub.onOpen = () => { flushChats(); syncNow(); };
+    }
+    hub.setGroups(S.groups.filter(g => g.chat).map(g => ({ id: g.id, cfg: g.chat })));
+    if (navigator.onLine) hub.connect();
+  }).catch(() => toast('Não foi possível carregar o módulo de rede dos grupos.'));
+}
+function restartHub() { if (hub) { hub.close(); hub = null; } startHub(); }
 
 function addMsg(gid, m) {
   S.chat ||= {};
@@ -788,10 +892,16 @@ function renderChatLog() {
   if (atBottom || !log.dataset.ready) { log.scrollTop = log.scrollHeight; log.dataset.ready = 1; }
   const st = $('#chat-status');
   if (st) {
-    const n = session?.connected || 0;
+    const n = hub?.connected || 0;
     st.className = 'badge ' + (n ? 'good' : navigator.onLine ? 'warn' : 'bad');
     st.textContent = n ? `Online · ${n} relay${n > 1 ? 's' : ''}` : navigator.onLine ? 'A ligar…' : 'Sem internet';
   }
+}
+
+function syncBadge(g) {
+  if (!g.chat) return '<span class="badge">a preparar…</span>';
+  if (g.syncPending) return `<span class="badge warn">${navigator.onLine ? 'a sincronizar…' : 'por sincronizar'}</span>`;
+  return hub?.connected ? '<span class="badge good">sincronizado</span>' : '<span class="badge">offline</span>';
 }
 
 async function sendChat(form) {
@@ -800,11 +910,11 @@ async function sendChat(form) {
   if (!text) return;
   if (!S.settings.myName) return askName(() => sendChat(form));
   const g = findGroup(form.dataset.chat);
-  if (!session) return toast('O chat ainda está a carregar. Tente de novo.');
-  const ev = await session.build(S.settings.myName, text);
+  if (!hub || !g?.chat) { startHub(); return toast('O chat ainda está a carregar. Tente de novo.'); }
+  const ev = await hub.buildChat(g.chat, S.settings.myName, text);
   input.value = '';
   addMsg(g.id, { id: ev.id, pk: ev.pubkey, name: S.settings.myName, text, ts: Date.now(), status: 'pending', ev });
-  session.publish(ev);
+  hub.publish(ev);
 }
 
 function askName(then) {
@@ -826,7 +936,7 @@ function bitchatText(g) {
 }
 
 function bitchatCard(g, offline) {
-  const nicks = (g.members || []).filter(m => m.bitchat);
+  const nicks = liveMembers(g).filter(m => m.bitchat);
   return `<details class="card bitchat ${offline ? 'urgent' : ''}" ${offline ? 'open' : ''}>
     <summary>${icon('bt')}<span><strong>${offline ? 'Sem internet: continue pelo bitchat' : 'Sem internet? Use o bitchat'}</strong>
       <span class="muted small">Mensagens por Bluetooth, de telemóvel em telemóvel</span></span></summary>
@@ -850,17 +960,7 @@ function bitchatCard(g, offline) {
 function viewChat() {
   const g = findGroup(ui.chatGroup);
   if (!g) return '<p class="empty">Grupo não encontrado. <a href="#/grupos">Voltar aos grupos</a></p>';
-  if (!g.chat) return `
-    <section class="card">
-      <h3>Chat do grupo ${esc(g.name)}</h3>
-      <ul class="plain">
-        <li>Com internet, as mensagens passam por relays públicos <strong>Nostr</strong>, cifradas com uma chave só deste grupo. Não há servidor da eKit nem contas.</li>
-        <li>Os relays guardam o texto cifrado. Não conseguem ler o conteúdo, mas veem um identificador aleatório deste dispositivo e a hora.</li>
-        <li>A chave vai dentro do ficheiro cifrado de <strong>Partilhar</strong> grupo. Depois de ativar, partilhe o grupo de novo com os membros.</li>
-        <li>Sem internet, a app ajuda a continuar pelo <strong>bitchat</strong> (Bluetooth).</li>
-      </ul>
-      <button class="btn primary" data-act="enableChat" data-id="${g.id}">Ativar chat</button>
-    </section>`;
+  if (!g.chat) { setTimeout(() => setupGroupKey(g), 0); return '<p class="empty">A preparar a chave do grupo…</p>'; }
   const offline = !navigator.onLine;
   return `
   ${offline ? bitchatCard(g, true) : ''}
@@ -915,7 +1015,7 @@ function render() {
   const draft = $('.chat-form input')?.value;
   $('#main').innerHTML = ROUTES[r][2]();
   if (r === 'mapa') initMap();
-  syncChat(r);
+  if (r === 'chat') renderChatLog();
   if (draft) { const i = $('.chat-form input'); if (i) i.value = draft; }
   $('#net').hidden = navigator.onLine;
 }
@@ -925,19 +1025,10 @@ const findGroup = id => S.groups.find(g => g.id === id);
 const findList = id => S.lists.find(l => l.id === id);
 
 const actions = {
-  enableChat: d => {
-    const g = findGroup(d.id);
-    newChatConfig().then(cfg => {
-      g.chat = cfg; save(); render();
-      if (!S.settings.myName) askName();
-      toast('Chat ativo. Partilhe o grupo de novo para os membros receberem a chave.');
-    });
-    return 'async';
-  },
   rotateChat: d => {
     const g = findGroup(d.id);
     if (!confirm('Criar uma nova chave? Quem não receber o grupo partilhado de novo deixa de ler as mensagens novas.')) return 'async';
-    newChatConfig().then(cfg => { g.chat = cfg; delete (S.chat || {})[g.id]; save(); render(); toast('Nova chave criada. Partilhe o grupo com os membros atuais.'); });
+    newChatConfig().then(cfg => { g.chat = cfg; g.sharedAt = ''; delete (S.chat || {})[g.id]; markDirty(g); startHub(); render(); toast('Nova chave criada. Partilhe o grupo com os membros atuais.'); });
     return 'async';
   },
   setName: () => { askName(); return 'async'; },
@@ -959,7 +1050,11 @@ const actions = {
   editGroup: d => groupForm(findGroup(d.id)),
   addMember: d => memberForm(findGroup(d.id)),
   editMember: d => { const g = findGroup(d.id); memberForm(g, g.members.find(m => m.id === d.mid)); },
-  exportGroup: d => { const g = findGroup(d.id); exportPackage('group', g, `ekit-grupo-${g.name.replace(/\W+/g, '_')}.json`); },
+  exportGroup: d => {
+    const g = findGroup(d.id);
+    g.sharedAt = new Date().toISOString();
+    exportPackage('group', { ...groupPayload(g), chat: g.chat }, `ekit-grupo-${g.name.replace(/\W+/g, '_')}.json`);
+  },
   exportBackup: () => { const { alertsCache, pointsCache, nostr, chat, ...data } = S; exportPackage('backup', data, `ekit-backup-${new Date().toISOString().slice(0, 10)}.json`); },
   import: () => $('#file').click(),
   exportIcs,
@@ -975,7 +1070,7 @@ const actions = {
   enableNotif: async () => { await Notification.requestPermission(); render(); checkExpiryNotification(); return 'async'; },
   wipe: () => {
     if (!confirm('Apagar TODOS os dados deste dispositivo? Esta ação não pode ser desfeita.')) return 'async';
-    localStorage.removeItem(KEY); S = seed(); save(); toast('Dados apagados.');
+    localStorage.removeItem(KEY); S = seed(); save(); restartHub(); toast('Dados apagados.');
   },
 };
 
@@ -989,7 +1084,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const k = e.target.dataset.change;
   if (!k) return;
-  if (k === 'relays') S.settings.relays = e.target.value.split(/\s+/).filter(u => /^wss?:\/\/\S+$/.test(u));
+  if (k === 'relays') { S.settings.relays = e.target.value.split(/\s+/).filter(u => /^wss?:\/\/\S+$/.test(u)); setTimeout(restartHub, 0); }
   else if (k === 'district') S.settings.district = e.target.value;
   else S.settings[k] = Math.max(1, Number(e.target.value) || 1);
   save(); render();
@@ -1004,7 +1099,7 @@ document.addEventListener('submit', e => {
 });
 $('#file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
-window.addEventListener('online', () => { render(); fetchAlerts(); });
+window.addEventListener('online', () => { render(); fetchAlerts(); startHub(); });
 window.addEventListener('offline', render);
 
 // ---------- Arranque ----------
@@ -1033,5 +1128,7 @@ function onboarding() {
 render();
 loadPoints();
 if (!S.settings.onboarded) onboarding();
+S.groups.forEach(setupGroupKey); // grupos antigos sem chave recebem uma
+startHub();
 checkExpiryNotification();
 if (navigator.onLine && (!S.alertsCache || Date.now() - S.alertsCache.at > 30 * 60e3)) fetchAlerts();
