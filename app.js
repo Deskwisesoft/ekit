@@ -153,7 +153,7 @@ function load() {
 }
 let S = load();
 const save = () => localStorage.setItem(KEY, JSON.stringify(S));
-const ui = { kitFilter: 'all', alertsLoading: false, alertsError: '', pos: null, geoError: '', pointsLoading: false };
+const ui = { folds: {}, kitFilter: 'all', alertsLoading: false, alertsError: '', pos: null, geoError: '', pointsLoading: false };
 
 // ---------- Pontos de encontro oficiais e geolocalização ----------
 let POINTS = [], POINTS_META = { sources: [] };
@@ -736,7 +736,12 @@ function openForm({ title, fields, values = {}, onSave, onDelete, submitLabel = 
   const d = $('#dlg');
   d.innerHTML = `<form class="form">
     <h2>${esc(title)}</h2>
-    ${fields.map(f => fieldHTML(f, f.type === 'geo' ? values : values[f.k])).join('')}
+    ${fields.filter(f => !f.more).map(f => fieldHTML(f, f.type === 'geo' ? values : values[f.k])).join('')}
+    ${[...new Set(fields.filter(f => f.more).map(f => f.more))].map(lbl => {
+      const fs = fields.filter(f => f.more === lbl);
+      const filled = fs.some(f => f.k && values[f.k] && f.type !== 'checkbox');
+      return `<details class="more" ${filled ? 'open' : ''}><summary>${esc(lbl)}</summary>${fs.map(f => fieldHTML(f, f.type === 'geo' ? values : values[f.k])).join('')}</details>`;
+    }).join('')}
     <div class="form-actions">
       ${onDelete ? '<button type="button" class="btn danger" data-del>Eliminar</button>' : ''}
       <span class="spacer"></span>
@@ -873,23 +878,34 @@ function backupNote() {
 }
 
 function viewKit() {
-  const f = ui.kitFilter;
+  const f = ui.kitFilter, st = stats();
   const show = i => f === 'all' || (f === 'missing' && need(i) > 0 && !isOk(i)) || (f === 'expiring' && ['warn', 'bad'].includes(expiryState(i)?.cls));
-  const filters = [['all', 'Todos'], ['missing', 'Em falta'], ['expiring', 'Validade']];
+  const filters = [['all', 'Tudo'], ['missing', `Em falta${st.missing ? ' (' + st.missing + ')' : ''}`], ['expiring', 'Validade']];
   return `
+  <section class="card hero">
+    <div class="ring" style="--p:${st.pct}"><span>${st.pct}%</span></div>
+    <div class="hero-body">
+      <h2>${st.pct === 100 ? 'Kit completo' : `Faltam ${st.missing} coisa${st.missing === 1 ? '' : 's'}`}</h2>
+      <p class="muted">Para ${S.settings.household} pessoa(s) durante 72 horas · <a href="#/definicoes">alterar</a></p>
+      ${st.expired || st.expiring ? `<p class="small"><span class="badge ${st.expired ? 'bad' : 'warn'}">${st.expired ? st.expired + ' expirado(s)' : st.expiring + ' a expirar'}</span></p>` : ''}
+    </div>
+  </section>
   <div class="toolbar">
     <div class="seg">${filters.map(([k, t]) => `<button class="${f === k ? 'on' : ''}" data-act="kitFilter" data-v="${k}">${t}</button>`).join('')}</div>
-    <button class="btn primary" data-act="addItem">+ Item</button>
+    <span class="spacer"></span><button class="btn" data-act="addItem">+ Item</button>
   </div>
   ${CATEGORIES.map(c => {
-    const items = S.kit.filter(i => i.cat === c.id && show(i));
+    const all = S.kit.filter(i => i.cat === c.id), items = all.filter(show);
     if (!items.length) return '';
-    return `<section class="card"><h3>${catIcon(c.id)}${esc(c.name)}</h3><ul class="list">${items.map(kitRow).join('')}</ul></section>`;
-  }).join('') || '<p class="empty">Nenhum item neste filtro.</p>'}`;
+    const miss = all.filter(i => need(i) > 0 && !isOk(i)).length, key = 'cat-' + c.id;
+    return `<details class="card fold" data-fold="${key}" ${isOpen(key, f !== 'all' || miss > 0) ? 'open' : ''}>
+      <summary>${catIcon(c.id)}<span class="fold-t">${esc(c.name)}</span><span class="count ${miss ? 'warn' : 'good'}">${miss ? miss + ' em falta' : 'completo'}</span></summary>
+      <ul class="list">${items.map(kitRow).join('')}</ul></details>`;
+  }).join('') || '<p class="empty">Nada neste filtro.</p>'}`;
 }
 function kitRow(i) {
   const n = need(i), ok = isOk(i), e = expiryState(i);
-  const meta = [n > 0 ? `Necessário: ${n} ${esc(i.unit)}` : 'Opcional', i.location && 'Guardado em: ' + esc(i.location)].filter(Boolean).join(' · ');
+  const meta = [n > 0 ? `Tenho ${i.have} de ${n} ${esc(i.unit)}` : 'Opcional', i.location && 'Em: ' + esc(i.location)].filter(Boolean).join(' · ');
   return `<li class="row kit-row ${ok ? 'done' : ''}">
     <button class="tick" data-act="fill" data-id="${i.id}" aria-label="Marcar como completo">${ok ? '✓' : ''}</button>
     <div class="row-main" data-act="editItem" data-id="${i.id}">
@@ -911,12 +927,12 @@ function itemForm(item) {
       { k: 'name', label: 'Nome', required: true },
       { k: 'cat', label: 'Categoria', type: 'select', options: CATEGORIES.map(c => [c.id, c.name]) },
       { k: 'qty', label: 'Quantidade recomendada', type: 'number' },
-      { k: 'unit', label: 'Unidade' },
-      { k: 'perPerson', label: 'Quantidade por pessoa do agregado', type: 'checkbox' },
+      { k: 'unit', more: 'Mais detalhes', label: 'Unidade' },
+      { k: 'perPerson', more: 'Mais detalhes', label: 'Quantidade por pessoa do agregado', type: 'checkbox' },
       { k: 'have', label: 'Quantidade que tenho', type: 'number' },
       { k: 'expiry', label: 'Data de validade', type: 'date' },
-      { k: 'location', label: 'Onde está guardado' },
-      { k: 'notes', label: 'Notas', type: 'textarea' },
+      { k: 'location', more: 'Mais detalhes', label: 'Onde está guardado' },
+      { k: 'notes', more: 'Mais detalhes', label: 'Notas', type: 'textarea' },
     ],
     onSave(v) { if (item) Object.assign(item, v); else S.kit.push({ id: uid(), expires: false, ...v }); },
     onDelete: item && (() => { S.kit = S.kit.filter(x => x !== item); }),
@@ -969,7 +985,7 @@ function contactForm(c) {
       { k: 'name', label: 'Nome', required: true },
       { k: 'phone', label: 'Telefone', type: 'tel' },
       { k: 'relation', label: 'Relação (ex.: vizinho, médico)' },
-      { k: 'notes', label: 'Notas', type: 'textarea' },
+      { k: 'notes', more: 'Mais detalhes', label: 'Notas', type: 'textarea' },
       { k: 'priority', label: 'Favorito (mostrar no painel)', type: 'checkbox' },
     ],
     onSave(v) { if (c) Object.assign(c, v); else S.contacts.push({ id: uid(), ...v }); },
@@ -980,19 +996,20 @@ function contactForm(c) {
 function viewGroups() {
   return `
   <div class="toolbar">
-    <a class="btn ghost" href="#/cartao">Cartão para imprimir</a>
-    <span class="spacer"></span>
+    <button class="btn primary" data-act="addGroup">+ Novo grupo</button>
     <button class="btn" data-act="joinGroup">Entrar com código</button>
-    <button class="btn primary" data-act="addGroup">+ Grupo</button>
+    <span class="spacer"></span>
+    <a class="btn ghost" href="#/cartao">${icon('list')} Cartão para imprimir</a>
   </div>
   ${S.groups.length ? S.groups.map(g => `
     <section class="card">
-      <div class="toolbar">
-        <h3><span class="cat-ic">${icon('users')}</span>${esc(g.name)}</h3> ${syncBadge(g)}<span class="spacer"></span>
+      <div class="group-head"><h2>${esc(g.name)}</h2>${syncBadge(g)}</div>
+      <div class="grid-buttons g3">
         <a class="btn" href="#/chat/${g.id}">${icon('chat')} Chat${countBadge(unread(g.id), 'mensagens por ler')}</a>
-        <button class="btn ghost" data-act="editGroup" data-id="${g.id}">Editar</button>
-        <button class="btn ghost" data-act="shareGroup" data-id="${g.id}">Partilhar</button>
+        <button class="btn" data-act="shareGroup" data-id="${g.id}">${icon('share')} Convidar</button>
+        <button class="btn" data-act="editGroup" data-id="${g.id}">${icon('settings')} Editar</button>
       </div>
+      <h4 class="sub-h">${icon('pin')} Pontos de encontro</h4>
       <div class="meet">${icon('pin')}<div class="meet-body">
         <div class="meet-head"><span class="muted small">Ponto de encontro principal</span>
           <button class="linkbtn small" data-act="editMeetMain" data-id="${g.id}">${g.meetingPoint || hasCoords(g) ? 'Editar' : 'Definir'}</button></div>
@@ -1005,15 +1022,17 @@ function viewGroups() {
         ${hasCoords(x) ? `<div class="mono small muted">${fmtCoords(x)}</div>${navLinks(x, x.name)}` : ''}</div></div>`).join('')}
       <button class="btn ghost" data-act="addMeet" data-id="${g.id}">${icon('pin')} + Ponto alternativo</button>
       ${g.notes ? `<p class="muted">${esc(g.notes)}</p>` : ''}
-      ${g.chat && !g.sharedAt && !g.imported ? '<p class="note">Partilhe o grupo com cada membro para sincronizar.</p>' : ''}
-      ${liveMembers(g).length ? '' : '<p class="muted small">Ainda sem membros.</p>'}
+      ${g.chat && !g.sharedAt && !g.imported ? '<p class="note">Carregue em <strong>Convidar</strong> para dar o código à família. Assim todos veem o mesmo.</p>' : ''}
+      <h4 class="sub-h">${icon('users')} Pessoas${liveMembers(g).length ? ' · ' + liveMembers(g).length : ''}</h4>
+      ${liveMembers(g).length ? '' : '<p class="muted small">Ainda sem pessoas.</p>'}
       <ul class="list">${liveMembers(g).map(m => `
         <li class="row"><div class="row-main" data-act="editMember" data-id="${g.id}" data-mid="${m.id}">
           <div class="row-title">${esc(m.name)}${m.pk && m.pk === myPub() ? ' <span class="badge good">eu</span>' : ''}${m.role ? ` <span class="badge">${esc(m.role)}</span>` : ''}</div>
           ${m.needs ? `<div class="row-sub">Necessidades: ${esc(m.needs)}</div>` : ''}
         </div>${m.phone ? `<a class="btn" href="${telHref(m.phone)}" aria-label="Ligar a ${esc(m.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>
       <button class="btn ghost" data-act="addMember" data-id="${g.id}">+ Pessoa</button>
-      ${livePets(g).length ? `<h4 class="sub-h">${icon('paw')} Animais</h4><ul class="list">${livePets(g).map(a => {
+      <h4 class="sub-h">${icon('paw')} Animais${livePets(g).length ? ' · ' + livePets(g).length : ''}</h4>
+      ${livePets(g).length ? `<ul class="list">${livePets(g).map(a => {
         const rd = daysLeft(a.rabies);
         const rab = a.rabies ? `<span class="badge ${rd < 0 ? 'bad' : rd <= 30 ? 'warn' : 'good'}">antirrábica ${rd < 0 ? 'expirada' : 'até ' + fmtDate(a.rabies)}</span>` : '';
         return `<li class="row"><div class="row-main" data-act="editPet" data-id="${g.id}" data-pid="${a.id}">
@@ -1036,7 +1055,7 @@ function groupForm(g, defaults) {
         options: [['', '— escolher —'], ...POINTS.map((p, i) => [String(i), `${p.m} · ${p.n}${p.t === 'Tsunami' ? ' (tsunami)' : ''}`])] }] : []),
       { k: 'meetingPoint', label: 'Ponto de encontro (nome/descrição)' },
       { k: 'geo', type: 'geo' },
-      { k: 'notes', label: 'Notas / plano do grupo', type: 'textarea' },
+      { k: 'notes', more: 'Mais detalhes', label: 'Notas / plano do grupo', type: 'textarea' },
       ...(!g && !S.settings.myName ? [{ k: 'myName', label: 'O seu nome no grupo', required: true }] : []),
     ],
     onSave(v) {
@@ -1130,14 +1149,14 @@ function petForm(g, a) {
     fields: [
       { k: 'name', label: 'Nome', required: true },
       { k: 'species', label: 'Espécie', type: 'select', options: ['Cão', 'Gato', 'Ave', 'Coelho', 'Réptil', 'Outro'].map(x => [x, x]) },
-      { k: 'breed', label: 'Raça / descrição (cor, sinais)' },
+      { k: 'breed', more: 'Mais detalhes', label: 'Raça / descrição (cor, sinais)' },
       { k: 'chip', label: 'Nº do microchip (15 dígitos)' },
-      { k: 'registry', label: 'Registo (ex.: SIAC) ou nº do boletim' },
-      { k: 'rabies', label: 'Vacina antirrábica válida até', type: 'date' },
-      { k: 'vet', label: 'Veterinário' },
-      { k: 'vetPhone', label: 'Telefone do veterinário', type: 'tel' },
-      { k: 'needs', label: 'Cuidados (medicação, alimentação, comportamento)', type: 'textarea' },
-      { k: 'notes', label: 'Notas', type: 'textarea' },
+      { k: 'registry', more: 'Mais detalhes', label: 'Registo (ex.: SIAC) ou nº do boletim' },
+      { k: 'rabies', more: 'Mais detalhes', label: 'Vacina antirrábica válida até', type: 'date' },
+      { k: 'vet', more: 'Mais detalhes', label: 'Veterinário' },
+      { k: 'vetPhone', more: 'Mais detalhes', label: 'Telefone do veterinário', type: 'tel' },
+      { k: 'needs', more: 'Mais detalhes', label: 'Cuidados (medicação, alimentação, comportamento)', type: 'textarea' },
+      { k: 'notes', more: 'Mais detalhes', label: 'Notas', type: 'textarea' },
     ],
     onSave(v) {
       if (v.chip && !/^\d{15}$/.test(v.chip.replace(/\s/g, '')) && !confirm('O nº do microchip costuma ter 15 dígitos. Guardar assim mesmo?')) return false;
@@ -1158,13 +1177,13 @@ function memberForm(g, m) {
       { k: 'name', label: 'Nome', required: true },
       { k: 'phone', label: 'Telefone', type: 'tel' },
       { k: 'role', label: 'Papel (ex.: responsável, criança)' },
-      { k: 'bitchat', label: 'Nome no bitchat (para mensagens privadas sem internet)' },
-      { type: 'info', html: 'Dados de saúde: só com consentimento da pessoa. Ajudam quem socorre.' },
-      { k: 'needs', label: 'Necessidades especiais (mobilidade, equipamentos…)', type: 'textarea' },
-      { k: 'meds', label: 'Medicação habitual' },
-      { k: 'allergies', label: 'Alergias' },
-      { k: 'blood', label: 'Grupo sanguíneo (ex.: A+)' },
-      { k: 'consent', label: 'A pessoa consentiu partilhar estes dados com o grupo', type: 'checkbox' },
+      { k: 'bitchat', more: 'Mais detalhes', label: 'Nome no bitchat (para mensagens privadas sem internet)' },
+      { type: 'info', more: 'Saúde (opcional)', html: 'Só com consentimento da pessoa. Ajuda quem socorre.' },
+      { k: 'needs', more: 'Saúde (opcional)', label: 'Necessidades especiais (mobilidade, equipamentos…)', type: 'textarea' },
+      { k: 'meds', more: 'Saúde (opcional)', label: 'Medicação habitual' },
+      { k: 'allergies', more: 'Saúde (opcional)', label: 'Alergias' },
+      { k: 'blood', more: 'Saúde (opcional)', label: 'Grupo sanguíneo (ex.: A+)' },
+      { k: 'consent', more: 'Saúde (opcional)', label: 'A pessoa consentiu partilhar estes dados com o grupo', type: 'checkbox' },
     ],
     onSave(v) {
       if (HEALTH_FIELDS.some(k => v[k]) && !v.consent) { toast('Para guardar dados de saúde é preciso o consentimento.'); return false; }
@@ -1182,10 +1201,12 @@ function viewLists() {
   <div class="toolbar"><span class="spacer"></span><button class="btn primary" data-act="addList">+ Lista</button></div>
   ${S.lists.map(l => {
     const done = l.items.filter(i => i.done).length;
-    return `<section class="card">
-      <div class="toolbar"><h3>${esc(l.name)} <span class="muted small">${done}/${l.items.length}</span></h3><span class="spacer"></span>
-        <button class="btn ghost" data-act="resetList" data-id="${l.id}">Limpar ✓</button>
-        <button class="btn ghost" data-act="editList" data-id="${l.id}">Editar</button></div>
+    const key = 'list-' + l.id;
+    return `<details class="card fold" data-fold="${key}" ${isOpen(key, false) ? 'open' : ''}>
+      <summary>${icon('list')}<span class="fold-t">${esc(l.name)}</span><span class="count ${done === l.items.length && done ? 'good' : ''}">${done}/${l.items.length}</span></summary>
+      <div class="toolbar"><span class="spacer"></span>
+        <button class="btn ghost sm" data-act="resetList" data-id="${l.id}">Desmarcar tudo</button>
+        <button class="btn ghost sm" data-act="editList" data-id="${l.id}">Editar</button></div>
       <ul class="list">${l.items.map(i => `
         <li class="row ${i.done ? 'done' : ''}">
           <button class="tick" data-act="toggleListItem" data-id="${l.id}" data-iid="${i.id}">${i.done ? '✓' : ''}</button>
@@ -1193,7 +1214,7 @@ function viewLists() {
           <button class="btn ghost" data-act="delListItem" data-id="${l.id}" data-iid="${i.id}" aria-label="Remover">✕</button>
         </li>`).join('')}</ul>
       <form class="inline" data-addto="${l.id}"><input name="text" placeholder="Adicionar passo…" required><button class="btn">+</button></form>
-    </section>`;
+    </details>`;
   }).join('')}`;
 }
 
@@ -1237,10 +1258,10 @@ function viewAlerts() {
       : '<p class="muted small">Sem sismos de magnitude 2,5 ou superior nos últimos 7 dias' + (myPos() ? ' perto de si' : '') + '.</p>'; })()}
     <p class="muted small">Fonte: IPMA (dados preliminares). Sismo forte? <a href="#/emergencia">Modo emergência →</a></p>
   </section>
-  <section class="card">
-    <h3>Fontes oficiais</h3>
+  <details class="card fold" data-fold="sources" ${isOpen('sources', false) ? 'open' : ''}>
+    <summary>${icon('shield')}<span class="fold-t">Fontes oficiais</span></summary>
     <ul class="list">${ALERT_SOURCES.map(s => `<li class="row"><div class="row-main"><div class="row-title"><a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a></div><div class="row-sub">${esc(s.note)}</div></div></li>`).join('')}</ul>
-  </section>`;
+  </details>`;
 }
 
 function viewMap() {
@@ -1260,19 +1281,6 @@ function viewMap() {
     <div id="map" class="map"></div>
   </section>
   <section class="card">
-    <h3>Mapa sem internet</h3>
-    ${`
-    <p class="muted small">Guarda o mapa à volta da sua posição e dos pontos de encontro dos grupos, para ver sem rede.</p>
-    <div class="progress" ${ui.tilesTotal ? '' : 'hidden'}><i id="tiles-bar"></i></div>
-    <p class="small" id="tiles-msg">${S.settings.mapSaved ? `Zona guardada em ${new Date(S.settings.mapSaved).toLocaleDateString('pt-PT')} (${S.settings.mapSavedN} partes).` : ''}</p>
-    <button class="btn" data-act="saveMap" ${ui.tilesTotal ? 'disabled' : ''}>${icon('map')} ${S.settings.mapSaved ? 'Atualizar mapa guardado' : 'Guardar mapa da minha zona'}</button>`}
-  </section>
-  <section class="card">
-    <h3>Procurar pontos oficiais</h3>
-    <input type="search" id="pt-search" value="${esc(ui.ptQuery || '')}" placeholder="Nome, freguesia ou concelho" aria-label="Procurar pontos de encontro oficiais" autocomplete="off">
-    <ul class="list" id="pt-results">${pointResults()}</ul>
-  </section>
-  <section class="card">
     <h3>Pontos mais próximos</h3>
     ${ui.pos ? `<ul class="list">${nearest.map(({ p, d }) => `
       <li class="row"><div class="row-main">
@@ -1284,11 +1292,25 @@ function viewMap() {
       : '<p class="muted">Carregue em "Onde estou". Funciona sem internet.</p>'}
   </section>
   <section class="card">
-    <h3>Dados oficiais</h3>
+    <h3>Procurar pontos oficiais</h3>
+    <input type="search" id="pt-search" value="${esc(ui.ptQuery || '')}" placeholder="Nome, freguesia ou concelho" aria-label="Procurar pontos de encontro oficiais" autocomplete="off">
+    <ul class="list" id="pt-results">${pointResults()}</ul>
+  </section>
+  <section class="card">
+    <h3>Mapa sem internet</h3>
+    ${`
+    <p class="muted small">Guarda o mapa à volta da sua posição e dos pontos de encontro dos grupos, para ver sem rede.</p>
+    <div class="progress" ${ui.tilesTotal ? '' : 'hidden'}><i id="tiles-bar"></i></div>
+    <p class="small" id="tiles-msg">${S.settings.mapSaved ? `Zona guardada em ${new Date(S.settings.mapSaved).toLocaleDateString('pt-PT')} (${S.settings.mapSavedN} partes).` : ''}</p>
+    <button class="btn" data-act="saveMap" ${ui.tilesTotal ? 'disabled' : ''}>${icon('map')} ${S.settings.mapSaved ? 'Atualizar mapa guardado' : 'Guardar mapa da minha zona'}</button>`}
+  </section>
+  <details class="card fold" data-fold="mapdata" ${isOpen('mapdata', false) ? 'open' : ''}>
+    <summary>${icon('shield')}<span class="fold-t">Dados oficiais</span></summary>
     <ul class="plain">${POINTS_META.sources.map(s => `<li><strong>${esc(s.m)}</strong>: <a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a> — ${esc(s.license)}</li>`).join('')}</ul>
     <p class="muted small">${POINTS.length} pontos, disponíveis offline.${at ? ' Lisboa atualizada em ' + new Date(at).toLocaleString('pt-PT') + '.' : ''}</p>
     <button class="btn" data-act="refreshLisboa" ${ui.pointsLoading ? 'disabled' : ''}>${ui.pointsLoading ? 'A atualizar…' : 'Atualizar pontos de Lisboa'}</button>
-  </section>`;
+  </details>
+`;
 }
 
 // Mosaicos à volta de cada sítio importante, do nível 12 (cidade) ao 16 (ruas). Limite modesto
@@ -1441,8 +1463,8 @@ function viewSettings() {
     <label for="nd">Avisar validades com quantos dias de antecedência</label>
     <input id="nd" type="number" min="1" value="${S.settings.notifyDays}" data-change="notifyDays">
   </section>
-  <section class="card">
-    <h3>Ordem dos menus</h3>
+  <details class="card fold" data-fold="set-nav" ${isOpen('set-nav', false) ? 'open' : ''}>
+    <summary>${icon('list')}<span class="fold-t">Ordem dos menus</span></summary>
     <p class="muted small">No telemóvel, as 4 primeiras ficam na barra de baixo; as outras ficam no Menu.</p>
     <ol class="list nav-order">${navOrder().map((k, i, o) => `
       <li class="row ${i === 3 ? 'nav-cut' : ''}"><span class="cat-ic">${icon(ROUTES[k][1])}</span>
@@ -1451,7 +1473,7 @@ function viewSettings() {
         <button class="btn sm" data-act="navDown" data-k="${k}" ${i === o.length - 1 ? 'disabled' : ''} aria-label="Descer ${esc(ROUTES[k][0])}">↓</button>
       </li>`).join('')}</ol>
     <button class="btn ghost" data-act="navReset">Repor ordem original</button>
-  </section>
+  </details>
   <section class="card">
     <h3>Lembretes</h3>
     <div class="grid-buttons">
@@ -1472,8 +1494,8 @@ function viewSettings() {
     <label class="check"><input type="checkbox" data-change="autoDistrict" ${S.settings.autoDistrict ? 'checked' : ''}> Escolher a zona dos avisos pela localização</label>
     <p class="muted small">A posição fica neste dispositivo. ${S.lastPos ? `<button class="linkbtn" data-act="forgetPos">Esquecer a última posição</button>` : ''}</p>
   </section>
-  <section class="card form">
-    <h3>Chat dos grupos</h3>
+  <details class="card fold" data-fold="set-chat" ${isOpen('set-chat', false) ? 'open' : ''}>
+    <summary>${icon('chat')}<span class="fold-t">Chat dos grupos</span></summary>
     <label class="check"><input type="checkbox" data-change="chatNotify" ${S.settings.chatNotify ? 'checked' : ''}> Notificar mensagens novas</label>
     <label class="check"><input type="checkbox" data-change="chatPreview" ${S.settings.chatPreview ? 'checked' : ''}> Mostrar o texto na notificação</label>
     <details class="adv"><summary>Opções avançadas</summary>
@@ -1482,7 +1504,7 @@ function viewSettings() {
       <p class="muted small">Os relays só recebem texto cifrado.</p>
     </details>
     ${S.settings.blocked?.length ? `<p class="small">${S.settings.blocked.length} remetente(s) bloqueado(s). <button class="linkbtn" data-act="unblockAll">Desbloquear todos</button></p>` : ''}
-  </section>
+  </details>
   <section class="card">
     <h3>Cópia de segurança</h3>
     <p class="muted small">${S.settings.lastBackup ? 'Última cópia: ' + new Date(S.settings.lastBackup).toLocaleDateString('pt-PT') + '.' : 'Ainda não fez nenhuma cópia.'} Guarde-a fora do telemóvel (email, computador).</p>
@@ -1491,11 +1513,11 @@ function viewSettings() {
       <button class="btn" data-act="import">Importar ficheiro</button>
     </div>
   </section>
-  <section class="card">
-    <h3>Privacidade</h3>
+  <details class="card fold" data-fold="set-priv" ${isOpen('set-priv', false) ? 'open' : ''}>
+    <summary>${icon('lock')}<span class="fold-t">Privacidade e apagar dados</span></summary>
     <p class="muted small">Os dados ficam neste dispositivo. <a href="#/sobre">Saber mais</a></p>
     <button class="btn danger" data-act="wipe">Apagar todos os dados</button>
-  </section>`;
+  </details>`;
 }
 
 // ---------- Rede dos grupos: sincronização + chat (Nostr), bitchat sem internet ----------
@@ -1795,10 +1817,12 @@ const ROUTES = {
 };
 ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Cifrado entre os membros.'];
 ROUTES.emergencia = ['Modo emergência', 'alert', viewEmergency, -1, 'O essencial, em poucos toques.'];
+ROUTES.agir = ['O que fazer agora', 'alert', viewAct, -1, ''];
 ROUTES.cartao = ['Cartão da família', 'users', viewCard, -1, 'Para imprimir e guardar no kit e na carteira.'];
 const route = () => {
   const r = location.hash.slice(2);
   if (r.startsWith('chat/')) { ui.chatGroup = r.slice(5); return 'chat'; }
+  if (r.startsWith('agir/')) { ui.guide = r.slice(5); return 'agir'; }
   if (r.startsWith('entrar/')) {
     const code = decodeURIComponent(r.slice(7));
     setTimeout(() => { history.replaceState(null, '', '#/grupos'); render(); joinGroup(code); }, 0);
@@ -1808,7 +1832,7 @@ const route = () => {
   return ROUTES[r] && r !== 'chat' ? r : 'painel';
 };
 
-const NAV_SHORT = { kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre', guia: 'O que fazer', emergencia: 'Emergência', cartao: 'Cartão', mais: 'Menu' };
+const NAV_SHORT = { agir: 'Emergência', kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre', guia: 'O que fazer', emergencia: 'Emergência', cartao: 'Cartão', mais: 'Menu' };
 
 function pageHead(r, title) {
   if (r === 'painel') {
@@ -1905,7 +1929,47 @@ function sendStatus(help) {
   if (navigator.share) navigator.share({ text }).catch(() => {});
   else { navigator.clipboard?.writeText(text); toast('Sem telefones no grupo. Mensagem copiada.'); }
 }
+// ---------- Passo a passo de uma situação ----------
+// A evacuação usa a lista "Antes de sair de casa" do utilizador (a que ele planeou).
+function guideSteps(g) {
+  if (g.id === 'evacuacao') {
+    const l = S.lists.find(x => /evacua/i.test(x.name));
+    if (l?.items.length) return [...l.items.map(i => i.text), ...g.steps.slice(1)];
+  }
+  return g.steps;
+}
+function viewAct() {
+  const g = GUIDES.find(x => x.id === ui.guide);
+  if (!g) return '<p class="empty">Situação não encontrada. <a href="#/emergencia">Voltar</a></p>';
+  const steps = guideSteps(g), n = steps.length;
+  if (ui.stepFor !== g.id) { ui.stepFor = g.id; ui.step = 0; }
+  const i = Math.min(ui.step, n), end = i >= n;
+  const meet = S.groups.find(x => x.meetingPoint || hasCoords(x)), pos = myPos();
+  const goRow = ['evacuacao', 'tsunami', 'incendio', 'inundacao', 'sismo'].includes(g.id) && meet
+    ? `<a class="now-row" href="#/mapa">${icon('pin')}<span class="now-t"><strong>${esc(meet.meetingPoint || fmtCoords(meet))}</strong><small>Ponto de encontro${pos && hasCoords(meet) ? ' · ' + fmtDist(distanceKm(pos, meet)) : ''}</small></span><span class="chev" aria-hidden="true">›</span></a>` : '';
+  return `
+  <div class="act-head">${icon(GUIDE_ICONS[g.id] || 'alert')}<strong>${esc(g.title)}</strong><span class="count">${end ? 'Concluído' : `Passo ${i + 1} de ${n}`}</span></div>
+  <div class="dots" aria-hidden="true">${steps.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</div>
+  ${end ? `<section class="card step-card">
+      <p class="step-text">Fez todos os passos.</p>
+      <p class="muted">Avise a família e siga as indicações das autoridades.</p>
+      <div class="status-btns"><button class="btn ok" data-act="status" data-v="ok">✓ Estou bem</button><button class="btn help" data-act="status" data-v="help">! Preciso de ajuda</button></div>
+    </section>`
+    : `<section class="card step-card"><span class="step-num">${i + 1}</span><p class="step-text">${esc(steps[i])}</p></section>`}
+  <div class="step-nav">
+    ${i > 0 ? '<button class="btn" data-act="stepPrev">‹ Anterior</button>' : ''}
+    ${end ? '<a class="btn primary" href="#/emergencia">Outras situações</a>' : `<button class="btn primary" data-act="stepNext">${i === n - 1 ? 'Concluir ✓' : 'Seguinte ›'}</button>`}
+  </div>
+  ${goRow}
+  <details class="card fold" data-fold="all-steps" ${isOpen('all-steps', false) ? 'open' : ''}>
+    <summary>${icon('list')}<span class="fold-t">Ver todos os passos</span></summary>
+    <ol class="all-steps">${steps.map((t, k) => `<li class="${k < i ? 'done' : ''}">${esc(t)}</li>`).join('')}</ol>
+  </details>
+  <p class="crisis-exit"><a href="#/emergencia">‹ Modo emergência</a></p>`;
+}
+
 function viewEmergency() {
+  ui.stepFor = null; // ao escolher de novo uma situação, começa no primeiro passo
   const pos = myPos(), nums = statusRecipients();
   const meet = S.groups.filter(g => g.meetingPoint || hasCoords(g));
   const alts = S.groups.flatMap(g => livePoints(g).map(x => ({ ...x, g })));
@@ -1921,6 +1985,10 @@ function viewEmergency() {
   return `
   <a class="btn call big" href="tel:112">${icon('phone')} Ligar 112</a>
   ${qk ? quakeBanner(qk) : ''}
+  <section class="card">
+    <h3>O que está a acontecer?</h3>
+    <div class="tiles">${GUIDES.filter(g => g.id !== 'telemovel').map(g => `<a class="tile" href="#/agir/${g.id}">${icon(GUIDE_ICONS[g.id] || 'alert')}<strong>${esc(g.title)}</strong><small>${guideSteps(g).length} passos</small></a>`).join('')}</div>
+  </section>
   <section class="card">
     <h3>Avisar a família</h3>
     <div class="status-btns">
@@ -1941,11 +2009,7 @@ function viewEmergency() {
     ${tsu && tsu.d <= 5 ? `<p class="note small"><strong>Está perto da costa.</strong> Depois de um sismo forte, afaste-se do mar a pé e suba: ponto de tsunami mais próximo a ${fmtDist(tsu.d)} (${esc(tsu.p.n)}).</p>` : ''}
     ${!meet.length && !alts.length && !(near && near.d <= 25) ? `<p class="muted">Sem ponto definido. <button class="btn sm" data-act="useLocation">${icon('pin')} Ver o ponto oficial mais próximo</button></p>` : ''}
   </section>
-  <section class="card">
-    <h3>O que está a acontecer?</h3>
-    ${GUIDES.filter(g => g.id !== 'telemovel').map(g => `<details class="guide"><summary>${icon(GUIDE_ICONS[g.id] || 'alert')} ${esc(g.title)}</summary>
-      <ol>${g.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol></details>`).join('')}
-  </section>
+
   ${calls.length ? `<section class="card"><h3>Ligar</h3><ul class="list">${calls.map(([n, p]) => `<li class="row"><div class="row-main"><div class="row-title">${esc(n)}</div></div>
     <a class="btn" href="${telHref(p)}" aria-label="Ligar a ${esc(n)}">${icon('phone')} ${esc(p)}</a></li>`).join('')}</ul></section>` : ''}
   ${health.length ? `<section class="card"><h3>Saúde (para quem socorre)</h3><ul class="list">${health.map(m => `<li class="row"><div class="row-main">
@@ -2044,7 +2108,7 @@ function render() {
   if (map && r !== 'mapa') { map.remove(); map = null; mapLayer = null; }
   const draft = $('.chat-form input')?.value;
   $('#main').className = 'r-' + r;
-  document.documentElement.classList.toggle('crisis', r === 'emergencia');
+  document.documentElement.classList.toggle('crisis', r === 'emergencia' || r === 'agir');
   $('#main').innerHTML = pageHead(r, title) + `<div class="content">${ROUTES[r][2]()}</div>`;
   if (r === 'mapa') initMap();
   if (r === 'chat') { renderChatLog(); markChatRead(ui.chatGroup); }
@@ -2117,6 +2181,8 @@ const actions = {
   drillLater: () => { S.settings.drillSnooze = Date.now() + 30 * 864e5; },
   phoneReady: () => { S.settings.phoneReady = true; },
   status: d => { sendStatus(d.v === 'help'); return 'async'; },
+  stepNext: () => { ui.step = (ui.step || 0) + 1; window.scrollTo(0, 0); },
+  stepPrev: () => { ui.step = Math.max(0, (ui.step || 0) - 1); window.scrollTo(0, 0); },
   print: () => { window.print(); return 'async'; },
   findServices: () => { findServices(); return 'async'; },
   forgetPos: () => { delete S.lastPos; ui.pos = null; },
@@ -2183,6 +2249,9 @@ document.addEventListener('click', e => {
   const r = actions[el.dataset.act](el.dataset);
   if (r !== 'async' && !$('#dlg').open) { save(); render(); }
 });
+// Lembra-se das secções abertas/fechadas entre atualizações do ecrã.
+document.addEventListener('toggle', e => { const k = e.target.dataset?.fold; if (k) ui.folds[k] = e.target.open; }, true);
+const isOpen = (k, dflt) => (k in ui.folds ? ui.folds[k] : dflt);
 document.addEventListener('change', e => {
   const k = e.target.dataset.change;
   if (!k) return;

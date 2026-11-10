@@ -280,6 +280,44 @@ details.adv > summary { cursor: pointer; color: var(--muted); font-weight: 600; 
   a { color: #000; text-decoration: none; }
 }
 
+/* Secções recolhíveis (mesmo aspeto em todo o lado) */
+details.fold > summary { list-style: none; display: flex; align-items: center; gap: 12px; cursor: pointer; min-height: 44px;
+  font-family: var(--serif); font-weight: 600; font-size: 1.1rem; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::after { content: '›'; margin-left: 4px; font-size: 1.5rem; line-height: 1; color: var(--muted); transition: transform .15s; }
+details.fold[open] > summary::after { transform: rotate(90deg); }
+details.fold[open] > summary { padding-bottom: 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+details.fold > summary .ic, details.fold > summary .cat-ic { color: var(--accent); flex: none; }
+.fold-t { flex: 1; min-width: 0; }
+.count { font-family: var(--sans); font-size: .82rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+.count.warn { background: var(--warn-bg); color: var(--warn); } .count.good { background: var(--good-bg); color: var(--good); }
+details.more { margin: 12px 0 4px; border: 1px solid var(--line); border-radius: var(--radius); padding: 0 12px; }
+details.more > summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; color: var(--accent); }
+details.more[open] { padding-bottom: 12px; }
+/* Emergência: passo a passo */
+.act-head { display: flex; align-items: center; gap: 10px; font-family: var(--serif); font-size: 1.3rem; }
+.act-head > .ic { width: 28px; height: 28px; color: var(--accent); flex: none; }
+.act-head strong { flex: 1; }
+.dots { display: flex; gap: 6px; }
+.dots i { flex: 1; height: 6px; border-radius: 3px; background: var(--chip); }
+.dots i.done { background: var(--good); } .dots i.on { background: var(--accent); }
+.step-card { display: flex; gap: 14px; align-items: flex-start; min-height: 180px; padding: 22px 20px; }
+.step-card:has(.status-btns) { display: block; }
+.step-num { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 1.2rem; }
+.step-text { margin: 0; font-size: 1.35rem; line-height: 1.45; font-weight: 600; }
+.step-nav { display: flex; gap: 10px; }
+.step-nav .btn { flex: 1; min-height: 60px; font-size: 1.1rem; font-weight: 700; }
+.all-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+.all-steps li.done { color: var(--muted); text-decoration: line-through; }
+/* Família */
+.group-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.group-head h2 { font-size: 1.35rem; margin: 0; }
+.grid-buttons.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid-buttons.g3 .btn { flex-direction: column; gap: 4px; min-height: 64px; font-size: .9rem; }
+/* Linhas e botões maiores, mais fáceis de tocar */
+.list .row { min-height: 56px; }
+.btn { min-height: 44px; }
+
 /* Início: duas portas e "Agora" */
 .door { display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 12px; text-decoration: none; color: var(--text);
   background: var(--card); border: 1.5px solid var(--strong-line); min-height: 84px; }
@@ -387,7 +425,7 @@ main { flex: 1 0 auto; width: 100%; align-content: start; }
   .r-painel .content { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
   .r-painel .content > .alert-banner, .r-painel .content > .sos-entry, .r-painel .content > .note, .r-painel .content > .card { grid-column: 1 / -1; }
   main.r-painel { max-width: 860px; }
-  main.r-emergencia, main.r-cartao { max-width: 760px; }
+  main.r-emergencia, main.r-cartao, main.r-agir { max-width: 760px; }
 
   .r-kit .content, .r-guia .content, .r-listas .content, .r-grupos .content,
   .r-contactos .content, .r-definicoes .content, .r-sobre .content { display: block; columns: 2; column-gap: 16px; }
