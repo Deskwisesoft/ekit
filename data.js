@@ -147,6 +147,40 @@ export const DISTRICT_CAPITALS = {
 // OpenStreetMap (Overpass): bombeiros, polícia e distrito da zona. Só com pedido do utilizador.
 export const OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
+// Antena 1 por zona de aviso (fonte: RTP, antena1.rtp.pt/frequencias). FM em MHz, onda média (OM) em kHz.
+export const RADIO_SOURCE = 'https://antena1.rtp.pt/frequencias/';
+export const RADIO_A1 = {
+  AVR: 'Lousã 87.9 · Arestal 106.7',
+  BJA: 'Mendro 87.7 · Mértola 90.9 · OM Elvas 720',
+  BRG: 'Braga 91.3 · Muro 88.3',
+  BGC: 'Bragança 96.4 · Bornes 92.8 · Miranda do Douro 90.3 · OM Bragança 666',
+  CBO: 'Gardunha 96.4 · Castelo Branco 89.9 · OM Castelo Branco 720',
+  CBR: 'Coimbra 94.9 · Lousã 87.9 · OM Coimbra 630',
+  EVR: 'Elvas 103.8 · Mendro 87.7 · Serra de Ossa 88.4 · OM Elvas 720',
+  FAR: 'Faro 97.6 · Monchique 88.9 · Alcoutim 88.9',
+  GDA: 'Guarda 94.7 · Marofa 97.2 · Manteigas 104.8 · OM Guarda 720',
+  LRA: 'Leiria 98.7 · Lousã 87.9 · Montejunto 98.3 · OM Coimbra 630',
+  LSB: 'Monsanto 95.7 · Banática 99.4 · Montejunto 98.3 · Janas 96.9 · OM 666',
+  PTG: 'Portalegre 97.9 · Elvas 103.8 · Montargil 93.6 · OM Portalegre 1287',
+  PTO: 'Monte da Virgem 96.7 · Muro 88.3 · Marão 95.2',
+  STM: 'Santarém 98.8 · Montejunto 98.3 · OM 666',
+  STB: 'Monsanto 95.7 · Tróia 106.7 · Grândola 99.2 · OM 666',
+  VCT: 'Muro 88.3 · Moledo 102.9 · Valença 98.2 · Paredes de Coura 102.9 · OM Valença 666',
+  VRL: 'Marão 95.2 · Minhéu 94.9 · S. Domingos 87.9 · OM Vila Real 666',
+  VIS: 'Lousã 87.9 · Gravia 104.5 · Viseu 88.2 · S. Domingos 87.9 · OM Viseu 666',
+  AOR: 'S. Miguel: Ponta Delgada 94.1 · Pico da Barrosa 97.9 · Furnas 93.6 · Nordeste 104.6 · Povoação 102.8 · Pico das Éguas 89.5 · Sta. Maria: Pico Alto 96.7',
+  ACE: 'Terceira: Sta. Bárbara 90.5 · Serra do Cume 99.7 · Faial: Cabeço Gordo 88.9 · Espalamaca 93.8 · Pico: Arrife 94.5 · Lajes do Pico 96.5 · S. Jorge: Macela 87.6 · Graciosa: Pico do Jardim 97.0',
+  AOC: 'Flores: Fajãzinha 100.4 · Lajes das Flores 102.6 · Monte das Cruzes 99.8 · Corvo: Monte das Cruzes 99.8 · OM 828',
+  MCN: 'Funchal (Monte) 104.6 · Pico do Areeiro 95.5 · Encumeada 93.1 · Achadas da Cruz 104.3 · Maçapez 92.0 · Gaula 98.5',
+  MCS: 'Funchal (Monte) 104.6 · Cabo Girão 96.7 · Caniço 101.6 · Ribeira Brava 105.6 · Calheta 105.4 · Ponta do Pargo 90.2',
+  MRM: 'Pico do Areeiro 95.5 · Paúl da Serra 101.9 · Encumeada 93.1 · Funchal (Monte) 104.6',
+  MPS: 'Porto Santo 100.5',
+};
+
+// Risco de incêndio rural (IPMA), por concelho: hoje (d0) e amanhã (d1).
+export const FIRE_RISK_URL = d => `https://api.ipma.pt/open-data/forecast/meteorology/rcm/rcm-d${d}.json`;
+export const FIRE_LEVELS = ['', 'Reduzido', 'Moderado', 'Elevado', 'Muito elevado', 'Máximo'];
+
 // Sismos (IPMA): área 7 = continente e Madeira, área 3 = Açores.
 export const SEISMIC_URL = area => `https://api.ipma.pt/open-data/observation/seismic/${area}.json`;
 
@@ -160,5 +194,6 @@ export const ALERT_SOURCES = [
   { name: 'ANEPC – Proteção Civil', url: 'https://prociv.gov.pt', note: 'Avisos e comunicados oficiais' },
   { name: 'IPMA – Avisos meteorológicos', url: 'https://www.ipma.pt/pt/otempo/prev-sam/', note: 'Avisos por distrito' },
   { name: 'Meteoalarm (Europa)', url: 'https://meteoalarm.org', note: 'Avisos meteorológicos em toda a Europa' },
-  { name: 'Fogos.pt', url: 'https://fogos.pt', note: 'Incêndios ativos' },
+  { name: 'Fogos.pt', url: 'https://fogos.pt', note: 'Incêndios ativos (dados da Proteção Civil)' },
+  { name: 'ANEPC – Ocorrências', url: 'https://prociv.gov.pt/pt/home/ocorrencias/', note: 'Ocorrências em curso em Portugal continental' },
 ];

@@ -1,6 +1,7 @@
 import {
   CATEGORIES, DEFAULT_KIT, EMERGENCY_NUMBERS, DEFAULT_LISTS, GUIDES,
   IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL, DISTRICT_CAPITALS, OVERPASS_URLS, SEISMIC_URL,
+  RADIO_A1, RADIO_SOURCE, FIRE_RISK_URL, FIRE_LEVELS,
 } from './data.js';
 import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS, publishInvite, fetchInvite, newInviteCode, normalizeCode } from './chat.js';
 const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
@@ -112,6 +113,7 @@ function cleanState(s) {
     chatNotify: st.chatNotify !== false, chatPreview: st.chatPreview !== false,
     autoDistrict: st.autoDistrict !== false,
     radio: str(st.radio, 60), lastBackup: num(st.lastBackup), mapSaved: num(st.mapSaved), mapSavedN: num(st.mapSavedN),
+    lastDrill: num(st.lastDrill), drillSnooze: num(st.drillSnooze),
   };
   out.kit = Array.isArray(s.kit) ? s.kit.map(i => ({
     id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
@@ -123,6 +125,8 @@ function cleanState(s) {
   // Listas novas (documentos, vizinhos) chegam uma vez a quem já usava a app.
   if (num(s.listsV, 1) < 2) for (const l of base.lists) if (!out.lists.some(x => x.name === l.name)) out.lists.push(l);
   out.listsV = 2;
+  out.fireRisk = s.fireRisk && Array.isArray(s.fireRisk.pts) ? { at: num(s.fireRisk.at), day: isoDate(s.fireRisk.day),
+    pts: s.fireRisk.pts.filter(p => Array.isArray(p) && p.length === 4 && p.every(Number.isFinite)).slice(0, 400) } : undefined;
   out.quakes = s.quakes && Array.isArray(s.quakes.data) ? { at: num(s.quakes.at), area: num(s.quakes.area), data: s.quakes.data.map(cleanQuake).filter(Boolean).slice(0, 400) } : undefined;
   out.groups = arr(s.groups).filter(g => g && typeof g.id === 'string').map(g => ({
     ...cleanGroup(g), chat: cleanChatCfg(g.chat), syncPending: !!g.syncPending, syncRev: num(g.syncRev), sharedAt: str(g.sharedAt, 40), imported: !!g.imported, selfAdded: !!g.selfAdded,
@@ -508,16 +512,20 @@ async function importFile(file) {
 
 function exportIcs() {
   const items = S.kit.filter(i => i.expiry);
-  if (!items.length) return toast('Nenhum produto tem data de validade.');
   const d = s => s.replace(/-/g, '');
   const now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  // Simulacro e revisão do kit: repetem de 6 em 6 meses.
+  const next = new Date(Math.max(Date.now() + 864e5, (S.settings.lastDrill || Date.now()) + 182 * 864e5)).toISOString().slice(0, 10);
+  const drill = ['BEGIN:VEVENT', `UID:simulacro@ekit`, `DTSTAMP:${now}`, `DTSTART;VALUE=DATE:${d(next)}`, 'RRULE:FREQ=MONTHLY;INTERVAL=6',
+    'SUMMARY:Simulacro da família e revisão do kit (eKit)', 'DESCRIPTION:Ir ao ponto de encontro; rever validades, pilhas e contactos.',
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Simulacro da família', 'TRIGGER:-P1D', 'END:VALARM', 'END:VEVENT'].join('\r\n');
   const ev = items.map(i => [
     'BEGIN:VEVENT', `UID:${i.id}@ekit`, `DTSTAMP:${now}`, `DTSTART;VALUE=DATE:${d(i.expiry)}`,
     `SUMMARY:Kit de emergência – expira: ${i.name.replace(/[,;]/g, ' ')}`,
     'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Substituir produto do kit', `TRIGGER:-P${S.settings.notifyDays}D`, 'END:VALARM',
     'END:VEVENT',
   ].join('\r\n'));
-  download('ekit-validades.ics', ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//eKit//PT', ...ev, 'END:VCALENDAR'].join('\r\n'), 'text/calendar');
+  download('ekit-lembretes.ics', ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//eKit//PT', drill, ...ev, 'END:VCALENDAR'].join('\r\n'), 'text/calendar');
 }
 
 // ---------- Notificações locais de validade ----------
@@ -537,8 +545,10 @@ async function scheduleNativeReminders() {
       if (warn > now) list.push({ id: 1000 + n * 2, title: 'Kit de emergência', body: `${i.name}: expira dentro de ${S.settings.notifyDays} dias.`, schedule: { at: warn } });
       if (exp > now) list.push({ id: 1001 + n * 2, title: 'Kit de emergência', body: `${i.name}: expira hoje. Substitua-o.`, schedule: { at: exp } });
     });
-    // Lembrete de revisão semestral
+    // Lembrete de revisão semestral e de simulacro
     list.push({ id: 999, title: 'Revisão do kit', body: 'Passaram seis meses: reveja validades, pilhas e o plano da família.', schedule: { at: new Date(now + 182 * 864e5) } });
+    const drillAt = Math.max(now + 864e5, (S.settings.lastDrill || now) + 182 * 864e5);
+    list.push({ id: 998, title: 'Simulacro da família', body: 'Combinem ir ao ponto de encontro e confirmem o plano.', schedule: { at: new Date(drillAt) } });
     if (list.length) await LN.schedule({ notifications: list.slice(0, 60) });
   } catch { /* plugin indisponível */ }
 }
@@ -586,8 +596,32 @@ function quakeBanner(q) {
     <span class="chev" aria-hidden="true">›</span></a>`;
 }
 
+// Risco de incêndio rural (IPMA): guarda [lat, lng, hoje, amanhã] por concelho e usa o mais próximo.
+async function fetchFireRisk() {
+  try {
+    const [a, b] = await Promise.all([0, 1].map(d => fetch(FIRE_RISK_URL(d), { cache: 'no-store' }).then(r => r.json())));
+    const pts = Object.entries(a?.local || {}).map(([k, v]) => [Number(v?.latitude), Number(v?.longitude), num(v?.data?.rcm), num(b?.local?.[k]?.data?.rcm)])
+      .filter(p => p.every(Number.isFinite) && p[2] >= 1 && p[2] <= 5);
+    if (pts.length) { S.fireRisk = { at: Date.now(), day: isoDate(a?.dataPrev), pts }; save(); }
+  } catch { /* sem rede: fica a última cópia */ }
+}
+function fireRiskHere() {
+  const fr = S.fireRisk;
+  if (!fr?.pts?.length) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const pos = myPos() || (DISTRICT_CAPITALS[S.settings.district] && { lat: DISTRICT_CAPITALS[S.settings.district][0], lng: DISTRICT_CAPITALS[S.settings.district][1] });
+  if (!pos) return null;
+  let best = null, bd = Infinity;
+  for (const p of fr.pts) { const d = distanceKm(pos, { lat: p[0], lng: p[1] }); if (d < bd) { bd = d; best = p; } }
+  if (!best || bd > 40) return null; // sem dados para esta zona (ex.: ilhas)
+  // O ficheiro de "hoje" pode ser de ontem: nesse caso o "amanhã" dele é o hoje.
+  const shift = fr.day && fr.day < today;
+  return { today: shift ? best[3] : best[2], tomorrow: shift ? 0 : best[3], own: !!myPos() };
+}
+const fireBadge = r => `<span class="badge ${r >= 4 ? 'bad' : r === 3 ? 'warn' : ''}">${FIRE_LEVELS[r]}</span>`;
+
 async function fetchAlerts() {
-  fetchQuakes();
+  fetchQuakes(); fetchFireRisk();
   ui.alertsLoading = true; render();
   try {
     const r = await fetch(IPMA_WARNINGS_URL, { cache: 'no-store' });
@@ -779,10 +813,13 @@ function viewDashboard() {
           <strong>${esc(near.p.n)}</strong> <span class="muted small">${esc(near.p.m)}${near.p.t === 'Tsunami' ? ' · tsunami' : ''}</span>
           ${navLinks(near.p, near.p.n)}</div></div>`
       : '<p class="muted small">Ainda não há pontos oficiais publicados perto de si. Combine um ponto com a família em Grupos.</p>';
-  const qk = strongQuake();
+  const qk = strongQuake(), fr = fireRiskHere();
   return `
   <a class="sos-entry" href="#/emergencia">${icon('alert')} Modo emergência</a>
   ${qk ? quakeBanner(qk) : ''}
+  ${fr && fr.today >= 4 ? `<a class="alert-banner ${fr.today === 5 ? 'bad' : 'orange'}" href="#/alertas">${icon('flame')}
+    <div><strong>Risco de incêndio ${FIRE_LEVELS[fr.today].toLowerCase()} hoje</strong><span>${fr.own ? 'No seu concelho' : 'No seu distrito'} · Sem queimadas nem fogo</span></div>
+    <span class="chev" aria-hidden="true">›</span></a>` : ''}
   ${top ? alertBanner(top, others.length) : ''}
   ${st.pct < 100 ? kitCard : ''}
 
@@ -813,7 +850,18 @@ function viewDashboard() {
         <div class="row-title">${esc(i.name)}</div><div class="row-sub"><span class="badge ${e.cls}">${esc(e.label)}</span></div>
       </div></li>`).join('')}</ul>` : ''}
   </section>` : ''}
+  ${drillNote()}
   ${backupNote()}`;
+}
+// Simulacro de 6 em 6 meses: é o que faz o plano funcionar no dia em que for preciso.
+function drillNote() {
+  if (!S.groups.some(g => g.meetingPoint || hasCoords(g))) return '';
+  const last = S.settings.lastDrill, due = !last || Date.now() - last > 182 * 864e5;
+  if (!due || Date.now() < S.settings.drillSnooze) return '';
+  return `<section class="card note-card"><h3>${icon('route')} Simulacro</h3>
+    <p>${last ? 'Passaram mais de 6 meses desde o último simulacro.' : 'Ainda não fizeram um simulacro.'} Combinem ir juntos ao ponto de encontro, cada um pelo seu caminho, e confirmem quanto tempo demora.</p>
+    <div class="grid-buttons"><button class="btn primary" data-act="drillDone">Fizemos hoje</button><button class="btn ghost" data-act="drillLater">Lembrar daqui a 1 mês</button></div>
+  </section>`;
 }
 function backupNote() {
   const has = S.groups.length || S.contacts.length || S.kit.some(i => i.have > 0);
@@ -1170,6 +1218,15 @@ function viewAlerts() {
     ${alerts.length ? `<ul class="list">${alerts.map(alertCard).join('')}</ul>` : '<p class="empty">Sem avisos meteorológicos ativos para esta zona.</p>'}
   </section>
   <section class="card">
+    <h3>Risco de incêndio rural</h3>
+    ${(() => { const fr = fireRiskHere(); return fr ? `<ul class="list">
+      <li class="row"><div class="row-main"><div class="row-title">Hoje ${fireBadge(fr.today)}</div></div></li>
+      ${fr.tomorrow ? `<li class="row"><div class="row-main"><div class="row-title">Amanhã ${fireBadge(fr.tomorrow)}</div></div></li>` : ''}</ul>
+      <p class="muted small">${fr.own ? 'No concelho onde está' : 'Na capital de distrito (use a sua localização para o seu concelho)'}. Fonte: IPMA.${fr.today >= 3 ? ' Não faça queimadas nem use máquinas que façam faíscas.' : ''}</p>`
+      : '<p class="muted small">Sem dados para esta zona. Carregue em Atualizar com internet.</p>'; })()}
+    <p class="small">Incêndios ativos: <a href="https://fogos.pt" target="_blank" rel="noopener">fogos.pt</a> · <a href="https://prociv.gov.pt/pt/home/ocorrencias/" target="_blank" rel="noopener">ANEPC</a></p>
+  </section>
+  <section class="card">
     <h3>Sismos recentes</h3>
     ${(() => { const qs = recentQuakes(7); return qs.length ? `<ul class="list">${qs.slice(0, 8).map(q => `<li class="row"><div class="row-main">
       <div class="row-title">Magnitude ${q.mag.toFixed(1).replace('.', ',')} <span class="badge ${q.mag >= 4 ? 'bad' : q.mag >= 3 ? 'warn' : ''}">${esc(q.reg)}</span>${q.sensed ? ' <span class="badge">sentido</span>' : ''}</div>
@@ -1201,7 +1258,7 @@ function viewMap() {
   </section>
   <section class="card">
     <h3>Mapa sem internet</h3>
-    ${native() ? '<p class="muted small">Na app, o mapa guarda as zonas que vai vendo. Para guardar uma zona inteira, use o site no navegador.</p>' : `
+    ${`
     <p class="muted small">Guarda o mapa à volta da sua posição e dos pontos de encontro dos grupos, para ver sem rede.</p>
     <div class="progress" ${ui.tilesTotal ? '' : 'hidden'}><i id="tiles-bar"></i></div>
     <p class="small" id="tiles-msg">${S.settings.mapSaved ? `Zona guardada em ${new Date(S.settings.mapSaved).toLocaleDateString('pt-PT')} (${S.settings.mapSavedN} partes).` : ''}</p>
@@ -1233,6 +1290,39 @@ function viewMap() {
 
 // Mosaicos à volta de cada sítio importante, do nível 12 (cidade) ao 16 (ruas). Limite modesto
 // para respeitar o OpenStreetMap: só a zona de cada ponto, a pedido do utilizador.
+// Partes do mapa guardadas no IndexedDB: funcionam no site e na app (onde não há service worker).
+let tileDBp = null;
+const tileDB = () => (tileDBp ||= new Promise((res, rej) => {
+  const r = indexedDB.open('ekit-map', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('tiles');
+  r.onsuccess = () => res(r.result);
+  r.onerror = () => rej(r.error);
+}));
+const tileReq = (mode, fn) => tileDB().then(db => new Promise(res => {
+  const q = fn(db.transaction('tiles', mode).objectStore('tiles'));
+  q.onsuccess = () => res(q.result); q.onerror = () => res(null);
+})).catch(() => null);
+const tileGet = k => tileReq('readonly', s => s.get(k));
+const tilePut = (k, blob) => tileReq('readwrite', s => s.put(blob, k));
+// Camada do Leaflet que usa primeiro a parte guardada e só depois a rede.
+function offlineTileLayer() {
+  const Layer = L.TileLayer.extend({
+    createTile(c, done) {
+      const img = document.createElement('img');
+      img.alt = ''; img.setAttribute('role', 'presentation');
+      img.referrerPolicy = 'strict-origin-when-cross-origin'; // o OpenStreetMap exige saber o site (só o endereço do site)
+      img.onload = () => done(null, img);
+      img.onerror = e => done(e, img);
+      const url = this.getTileUrl(c);
+      tileGet(`${c.z}/${c.x}/${c.y}`).then(b => {
+        if (b) { const u = URL.createObjectURL(b); img.onload = () => { URL.revokeObjectURL(u); done(null, img); }; img.src = u; }
+        else { img.crossOrigin = 'anonymous'; img.src = url; }
+      });
+      return img;
+    },
+  });
+  return new Layer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+}
 function tilesAround(places) {
   const set = new Set();
   const tile = (lat, lng, z) => {
@@ -1252,7 +1342,6 @@ async function saveMapArea() {
   const places = [pos, ...S.groups.filter(hasCoords), ...S.groups.flatMap(g => livePoints(g).filter(hasCoords))].filter(Boolean);
   if (!places.length) return toast('Use "Onde estou" ou defina um ponto de encontro primeiro.');
   if (!navigator.onLine) return toast('Precisa de internet para guardar o mapa.');
-  if (!navigator.serviceWorker?.controller) return toast('Recarregue a página e tente de novo.');
   const list = tilesAround(places);
   ui.tilesTotal = list.length; render();
   let done = 0, ok = 0;
@@ -1261,13 +1350,12 @@ async function saveMapArea() {
     if (bar) bar.style.width = Math.round((done / list.length) * 100) + '%';
     if (msg) msg.textContent = `A guardar… ${done} de ${list.length}`;
   };
-  const load = t => new Promise(res => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => { ok++; res(); };
-    img.onerror = () => res();
-    img.src = `https://tile.openstreetmap.org/${t}.png?keep`;
-  });
+  const load = async t => {
+    try {
+      const r = await fetch(`https://tile.openstreetmap.org/${t}.png`, { referrerPolicy: 'strict-origin-when-cross-origin' });
+      if (r.ok) { await tilePut(t, await r.blob()); ok++; }
+    } catch { /* falhou esta parte: segue */ }
+  };
   const queue = [...list];
   await Promise.all(Array.from({ length: 2 }, async () => { while (queue.length) { await load(queue.shift()); done++; step(); } }));
   S.settings.mapSaved = Date.now(); S.settings.mapSavedN = ok; ui.tilesTotal = 0;
@@ -1304,7 +1392,7 @@ function initMap() {
   if (map) { el.replaceWith(map.getContainer()); map.invalidateSize(); }
   else {
     map = L.map(el, { zoomSnap: 0.5, wheelPxPerZoomLevel: 90 });
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, crossOrigin: true, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+    offlineTileLayer().addTo(map);
     mapLayer = L.layerGroup().addTo(map);
     mapKey = ''; fresh = true;
   }
@@ -1365,15 +1453,16 @@ function viewSettings() {
     <h3>Lembretes</h3>
     <div class="grid-buttons">
       <button class="btn" data-act="enableNotif" ${notif !== 'default' ? 'disabled' : ''}>${notif === 'granted' ? 'Notificações ativas' : notif === 'denied' ? 'Notificações bloqueadas' : 'Ativar notificações'}</button>
-      <button class="btn" data-act="exportIcs">Validades para o calendário</button>
+      <button class="btn" data-act="exportIcs">Validades e simulacro no calendário</button>
     </div>
     <p class="muted small">Com a app fechada, use o calendário.</p>
   </section>
   <section class="card form">
     <h3>Rádio</h3>
-    <label for="radio">Frequência da Antena 1 ou da rádio local na sua zona</label>
-    <input id="radio" data-change="radio" value="${esc(S.settings.radio)}" placeholder="ex.: Antena 1 · 95.7 FM" maxlength="60">
-    <p class="muted small">Num apagão a informação oficial chega pela rádio. Confirme a frequência agora num rádio a pilhas.</p>
+    <p><strong>Antena 1 · ${esc(IPMA_AREAS[S.settings.district])}</strong><br><span class="small">${esc(RADIO_A1[S.settings.district] || '')}</span></p>
+    <p class="muted small">FM em MHz, OM em kHz. Fonte: <a href="${RADIO_SOURCE}" target="_blank" rel="noopener">RTP</a>. Num apagão a informação oficial chega pela rádio: experimente já num rádio a pilhas.</p>
+    <label for="radio">Rádio local que também quer ter à mão (opcional)</label>
+    <input id="radio" data-change="radio" value="${esc(S.settings.radio)}" placeholder="ex.: Rádio da sua cidade · 90.0 FM" maxlength="60">
   </section>
   <section class="card form">
     <h3>Localização</h3>
@@ -1860,7 +1949,7 @@ function viewEmergency() {
     <div class="row-sub">${esc([m.allergies && 'Alergias: ' + m.allergies, m.meds && 'Medicação: ' + m.meds, m.needs].filter(Boolean).join(' · '))}</div></div></li>`).join('')}</ul></section>` : ''}
   <section class="card">
     <h3>Rádio e bateria</h3>
-    <p>${S.settings.radio ? `${icon('bolt')} <strong>${esc(S.settings.radio)}</strong>` : 'Ligue a Antena 1 ou a rádio local num rádio a pilhas. <a href="#/definicoes">Guardar a frequência →</a>'}</p>
+    <p><strong>Antena 1</strong> (${esc(IPMA_AREAS[S.settings.district])}): ${esc(RADIO_A1[S.settings.district] || '')}${S.settings.radio ? `<br><strong>${esc(S.settings.radio)}</strong>` : ''}</p>
     <ul class="tips small">
       <li>Ative o modo de poupança de energia e baixe o brilho.</li>
       <li>Prefira SMS a chamadas; chamadas curtas.</li>
@@ -1879,7 +1968,7 @@ function viewCard() {
   <section class="card family-card">
     <h2>Em emergência: 112</h2>
     <p class="small">Ponto de encontro e contactos da família · atualizado em ${new Date().toLocaleDateString('pt-PT')}</p>
-    ${S.settings.radio ? `<p class="small"><strong>Rádio:</strong> ${esc(S.settings.radio)}</p>` : ''}
+    <p class="small"><strong>Rádio Antena 1 (${esc(IPMA_AREAS[S.settings.district])}):</strong> ${esc(RADIO_A1[S.settings.district] || '')}${S.settings.radio ? ` · ${esc(S.settings.radio)}` : ''}</p>
   </section>
   ${S.groups.map(g => `<section class="card family-card">
     <h3>${esc(g.name)}</h3>
@@ -2020,6 +2109,8 @@ const actions = {
   locate: () => { ui.recenter = true; locate(); return 'async'; },
   useLocation: () => { locate(); return 'async'; },
   saveMap: () => { saveMapArea(); return 'async'; },
+  drillDone: () => { S.settings.lastDrill = Date.now(); toast('Registado. Próximo lembrete daqui a 6 meses.'); scheduleNativeReminders(); },
+  drillLater: () => { S.settings.drillSnooze = Date.now() + 30 * 864e5; },
   status: d => { sendStatus(d.v === 'help'); return 'async'; },
   print: () => { window.print(); return 'async'; },
   findServices: () => { findServices(); return 'async'; },

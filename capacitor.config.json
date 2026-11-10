@@ -10,5 +10,6 @@
     "LocalNotifications": {
       "iconColor": "#12325a"
     }
-  }
+  },
+  "appendUserAgent": "eKit/1.0 (+https://deskwisesoft.github.io/ekit/)"
 }
