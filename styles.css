@@ -322,3 +322,6 @@ main { flex: 1 0 auto; width: 100%; align-content: start; }
 input.mono { font-family: ui-monospace, Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; }
 .sub-h { display: flex; align-items: center; gap: 6px; font-family: var(--serif); font-size: 1rem; margin: 14px 0 4px; padding-top: 10px; border-top: 1px solid var(--line); }
 .sub-h .ic { color: var(--accent); }
+.meet-body { flex: 1; min-width: 0; }
+.meet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.meet.alt > .ic { color: #8b6fd6; }

@@ -52,12 +52,24 @@ function cleanPet(a) {
   o.rabies = isoDate(a?.rabies);
   return o;
 }
+const MEET_KINDS = { casa: 'Perto de casa', bairro: 'No bairro', fora: 'Fora da zona', outro: 'Outro' };
+function cleanMeet(x) {
+  const o = { id: idOf(x?.id), updatedAt: clampTs(x?.updatedAt) };
+  if (x?.deleted) { o.deleted = true; return o; }
+  o.name = str(x?.name, 200) || 'Ponto de encontro';
+  o.kind = Object.hasOwn(MEET_KINDS, x?.kind) ? x.kind : 'outro';
+  o.lat = coord(x?.lat, 90); o.lng = coord(x?.lng, 180);
+  if (o.lat === '' || o.lng === '') { o.lat = ''; o.lng = ''; }
+  o.notes = str(x?.notes, 500);
+  return o;
+}
 function cleanGroup(g) {
   const o = {
     id: idOf(g?.id), name: str(g?.name, 120) || 'Grupo', meetingPoint: str(g?.meetingPoint, 300),
     lat: coord(g?.lat, 90), lng: coord(g?.lng, 180), notes: str(g?.notes, 2000), meta: {},
     members: arr(g?.members).filter(m => m && typeof m.id === 'string').slice(0, 200).map(cleanMember),
     pets: arr(g?.pets).filter(a => a && typeof a.id === 'string').slice(0, 100).map(cleanPet),
+    points: arr(g?.points).filter(a => a && typeof a.id === 'string').slice(0, 20).map(cleanMeet),
   };
   if (o.lat === '' || o.lng === '') { o.lat = ''; o.lng = ''; }
   for (const k of GROUP_FIELDS) if (g?.meta?.[k] != null) o.meta[k] = clampTs(g.meta[k]);
@@ -753,9 +765,17 @@ function viewGroups() {
         <button class="btn ghost" data-act="editGroup" data-id="${g.id}">Editar</button>
         <button class="btn ghost" data-act="shareGroup" data-id="${g.id}">Partilhar</button>
       </div>
-      ${g.meetingPoint || hasCoords(g) ? `<div class="meet">${icon('pin')}<div>
-        <div class="muted small">Ponto de encontro</div><strong>${esc(g.meetingPoint || 'sem nome')}</strong>
-        ${hasCoords(g) ? `<div class="mono small muted">${fmtCoords(g)}</div>${navLinks(g, g.meetingPoint)}` : ''}</div></div>` : ''}
+      <div class="meet">${icon('pin')}<div class="meet-body">
+        <div class="meet-head"><span class="muted small">Ponto de encontro principal</span>
+          <button class="linkbtn small" data-act="editMeetMain" data-id="${g.id}">${g.meetingPoint || hasCoords(g) ? 'Editar' : 'Definir'}</button></div>
+        ${g.meetingPoint || hasCoords(g) ? `<strong>${esc(g.meetingPoint || 'sem nome')}</strong>
+        ${hasCoords(g) ? `<div class="mono small muted">${fmtCoords(g)}</div>${navLinks(g, g.meetingPoint)}` : ''}` : '<span class="muted small">Por definir</span>'}</div></div>
+      ${livePoints(g).map(x => `<div class="meet alt">${icon('pin')}<div class="meet-body">
+        <div class="meet-head"><span class="muted small">${esc(MEET_KINDS[x.kind])}</span>
+          <button class="linkbtn small" data-act="editMeet" data-id="${g.id}" data-pid="${x.id}">Editar</button></div>
+        <strong>${esc(x.name)}</strong>${x.notes ? `<div class="muted small">${esc(x.notes)}</div>` : ''}
+        ${hasCoords(x) ? `<div class="mono small muted">${fmtCoords(x)}</div>${navLinks(x, x.name)}` : ''}</div></div>`).join('')}
+      <button class="btn ghost" data-act="addMeet" data-id="${g.id}">${icon('pin')} + Ponto alternativo</button>
       ${g.notes ? `<p class="muted">${esc(g.notes)}</p>` : ''}
       ${g.chat && !g.sharedAt && !g.imported ? '<p class="note">Partilhe o grupo com cada membro para sincronizar.</p>' : ''}
       ${liveMembers(g).length ? '' : '<p class="muted small">Ainda sem membros.</p>'}
@@ -810,6 +830,71 @@ function groupForm(g, defaults) {
     onDelete: g && (() => { S.groups = S.groups.filter(x => x !== g); delete (S.chat || {})[g.id]; startHub(); }),
   });
 }
+const officialField = () => (POINTS.length ? [{ k: 'official', label: 'Usar um ponto oficial (opcional)', type: 'select',
+  options: [['', '— escolher —'], ...POINTS.map((p, i) => [String(i), `${p.m} · ${p.n}${p.t === 'Tsunami' ? ' (tsunami)' : ''}`])] }] : []);
+
+// Ponto principal: qualquer membro pode alterar; sincroniza para todos.
+function meetMainForm(g) {
+  openForm({
+    title: 'Ponto de encontro principal',
+    values: g,
+    fields: [...officialField(), { k: 'meetingPoint', label: 'Nome / descrição' }, { k: 'geo', type: 'geo' }],
+    onSave(v) {
+      delete v.official;
+      const now = Date.now();
+      for (const k of ['meetingPoint', 'lat', 'lng']) if (String(v[k] ?? '') !== String(g[k] ?? '')) { g[k] = v[k]; (g.meta ||= {})[k] = now; }
+      markDirty(g);
+    },
+  });
+}
+// Pontos alternativos (perto de casa, bairro, fora da zona)
+function meetForm(g, x, preset) {
+  openForm({
+    title: x ? 'Editar ponto alternativo' : 'Novo ponto alternativo',
+    values: x || preset || { kind: 'bairro' },
+    fields: [
+      { k: 'kind', label: 'Tipo', type: 'select', options: Object.entries(MEET_KINDS) },
+      ...officialField(),
+      { k: 'meetingPoint', label: 'Nome / descrição', required: true },
+      { k: 'geo', type: 'geo' },
+      { k: 'notes', label: 'Quando usar (ex.: se a casa estiver inacessível)' },
+    ],
+    onSave(v) {
+      delete v.official;
+      const item = { kind: v.kind, name: v.meetingPoint, lat: v.lat, lng: v.lng, notes: v.notes, updatedAt: Date.now() };
+      g.points ||= [];
+      if (x) Object.assign(x, item); else g.points.push({ id: uid(), ...item });
+      markDirty(g);
+    },
+    onDelete: x && (() => { for (const k of Object.keys(x)) if (k !== 'id') delete x[k]; x.deleted = true; x.updatedAt = Date.now(); markDirty(g); }),
+  });
+  if (x) { const f = $('#dlg form'); if (f?.elements.meetingPoint) f.elements.meetingPoint.value = x.name; }
+}
+// No mapa: usar um ponto oficial num grupo, como principal ou alternativo
+function useOfficialPoint(p) {
+  if (!S.groups.length) return toast('Crie primeiro um grupo.');
+  openForm({
+    title: 'Usar no grupo',
+    values: { gid: S.groups[0].id, as: 'alt' },
+    fields: [
+      { type: 'info', html: `<strong>${esc(p.n)}</strong> · ${esc(p.m)}` },
+      { k: 'gid', label: 'Grupo', type: 'select', options: S.groups.map(g => [g.id, g.name]) },
+      { k: 'as', label: 'Como', type: 'select', options: [['alt', 'Ponto alternativo'], ['main', 'Ponto principal']] },
+    ],
+    submitLabel: 'Usar',
+    onSave(v) {
+      const g = findGroup(v.gid);
+      const name = `${p.n} (${p.m})`, now = Date.now();
+      if (v.as === 'main') {
+        Object.assign(g, { meetingPoint: name, lat: p.lat, lng: p.lng });
+        g.meta ||= {}; g.meta.meetingPoint = g.meta.lat = g.meta.lng = now;
+      } else (g.points ||= []).push({ id: uid(), kind: 'bairro', name, lat: p.lat, lng: p.lng, notes: '', updatedAt: now });
+      markDirty(g);
+      toast(`Adicionado a "${g.name}".`);
+    },
+  });
+}
+
 function petForm(g, a) {
   openForm({
     title: a ? 'Editar animal' : 'Novo animal',
@@ -911,7 +996,8 @@ function viewAlerts() {
 
 function viewMap() {
   const mine = S.groups.filter(hasCoords);
-  const all = [...mine.map(g => ({ n: g.meetingPoint || g.name, m: 'Grupo: ' + g.name, lat: g.lat, lng: g.lng, mine: true })), ...POINTS];
+  const alts = S.groups.flatMap(g => livePoints(g).filter(hasCoords).map(x => ({ n: x.name, m: `${g.name} · ${MEET_KINDS[x.kind]}`, lat: x.lat, lng: x.lng, mine: true })));
+  const all = [...mine.map(g => ({ n: g.meetingPoint || g.name, m: 'Grupo: ' + g.name, lat: g.lat, lng: g.lng, mine: true })), ...alts, ...POINTS.map((p, i) => ({ ...p, i }))];
   const nearest = ui.pos ? all.map(p => ({ p, d: distanceKm(ui.pos, p) })).sort((a, b) => a.d - b.d).slice(0, 8) : [];
   const at = S.pointsCache?.at;
   return `
@@ -931,6 +1017,7 @@ function viewMap() {
         <div class="row-title">${esc(p.n)} <span class="badge ${p.t === 'Tsunami' ? 'warn' : ''}">${esc(p.m)}${p.t === 'Tsunami' ? ' · tsunami' : ''}</span></div>
         <div class="row-sub"><strong>${fmtDist(d)}</strong> para ${bearing(ui.pos, p)} · <span class="mono">${fmtCoords(p)}</span>${p.cap ? ` · capacidade ${p.cap.toLocaleString('pt-PT')} pessoas` : ''}</div>
         <div class="row-sub">${navLinks(p, p.n)}</div>
+        ${p.mine ? '' : `<div class="row-sub"><button class="btn sm ghost" data-act="useOfficial" data-i="${p.i}">${icon('users')} Usar no grupo</button></div>`}
       </div></li>`).join('')}</ul>`
       : '<p class="muted">Carregue em "Onde estou". Funciona sem internet.</p>'}
   </section>
@@ -957,6 +1044,10 @@ function initMap() {
     const c = p.t === 'Tsunami' ? '#d97706' : '#2563eb';
     L.circleMarker([p.lat, p.lng], { radius: 6, color: c, fillColor: c, fillOpacity: 0.7, weight: 1 }).bindPopup(popup(p, p.n)).addTo(map);
   });
+  S.groups.forEach(g => livePoints(g).filter(hasCoords).forEach(x => {
+    L.circleMarker([x.lat, x.lng], { radius: 8, color: '#fff', fillColor: '#a78bfa', fillOpacity: 1, weight: 2 })
+      .bindPopup(popup({ ...x, m: `${g.name} · ${MEET_KINDS[x.kind]}` }, x.name)).addTo(map);
+  }));
   S.groups.filter(hasCoords).forEach(g => {
     L.circleMarker([g.lat, g.lng], { radius: 10, color: '#fff', fillColor: '#7c3aed', fillOpacity: 1, weight: 3 })
       .bindPopup(popup({ ...g, m: 'Grupo: ' + g.name }, g.meetingPoint || g.name)).addTo(map);
@@ -1034,6 +1125,7 @@ const keying = new Set();
 const myPub = () => (S.nostr?.pk || '');
 const liveMembers = g => (g.members || []).filter(m => !m.deleted);
 const livePets = g => (g.pets || []).filter(a => !a.deleted);
+const livePoints = g => (g.points || []).filter(a => !a.deleted);
 
 async function ensureIdentity() {
   await loadNostr();
@@ -1042,7 +1134,7 @@ async function ensureIdentity() {
 
 // Só o que é partilhado com o grupo (sem a chave nem estado local deste dispositivo).
 function groupPayload(g) {
-  return { id: g.id, ...Object.fromEntries(GROUP_FIELDS.map(k => [k, g[k] ?? ''])), meta: g.meta || {}, members: g.members || [], pets: g.pets || [] };
+  return { id: g.id, ...Object.fromEntries(GROUP_FIELDS.map(k => [k, g[k] ?? ''])), meta: g.meta || {}, members: g.members || [], pets: g.pets || [], points: g.points || [] };
 }
 
 function mergeGroup(g, r) {
@@ -1053,7 +1145,7 @@ function mergeGroup(g, r) {
     const rt = Number(r.meta?.[k]) || 0;
     if (rt > (g.meta[k] || 0)) { g[k] = r[k]; g.meta[k] = rt; changed = true; }
   }
-  for (const key of ['members', 'pets']) {
+  for (const key of ['members', 'pets', 'points']) {
     g[key] ||= [];
     for (const rm of r[key]) {
       const lm = g[key].find(m => m.id === rm.id);
@@ -1482,6 +1574,10 @@ const actions = {
   editGroup: d => groupForm(findGroup(d.id)),
   addMember: d => memberForm(findGroup(d.id)),
   addPet: d => petForm(findGroup(d.id)),
+  editMeetMain: d => meetMainForm(findGroup(d.id)),
+  addMeet: d => meetForm(findGroup(d.id)),
+  editMeet: d => { const g = findGroup(d.id); meetForm(g, g.points.find(x => x.id === d.pid)); },
+  useOfficial: d => { const p = POINTS[Number(d.i)]; if (p) useOfficialPoint(p); },
   editPet: d => { const g = findGroup(d.id); petForm(g, g.pets.find(a => a.id === d.pid)); },
   editMember: d => { const g = findGroup(d.id); memberForm(g, g.members.find(m => m.id === d.mid)); },
   shareGroup: d => { shareGroup(findGroup(d.id)); return 'async'; },
