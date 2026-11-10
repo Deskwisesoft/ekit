@@ -242,7 +242,7 @@ async function exportPackage(type, payload, filename) {
   openForm({
     title: type === 'group' ? 'Exportar grupo' : 'Exportar cópia de segurança',
     fields: [
-      { type: 'info', html: 'Defina uma palavra-passe para cifrar o ficheiro. Partilhe-a por outro canal (ex.: pessoalmente). Sem palavra-passe o ficheiro fica legível por qualquer pessoa.' },
+      { type: 'info', html: 'Partilhe a palavra-passe por outro canal. Sem ela, o ficheiro fica legível.' },
       { k: 'pass', label: 'Palavra-passe (mín. 8 caracteres)', type: 'password' },
     ],
     submitLabel: 'Exportar',
@@ -614,7 +614,7 @@ function viewContacts() {
         <div class="row-title">${esc(c.name)}${c.priority ? ' <span class="badge">favorito</span>' : ''}</div>
         <div class="row-sub">${esc([c.relation, c.notes].filter(Boolean).join(' · '))}</div>
       </div>${c.phone ? `<a class="btn" href="${telHref(c.phone)}" aria-label="Ligar a ${esc(c.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>`
-      : '<p class="muted">Adicione familiares, vizinhos, médico, seguradora… Os contactos marcados como favoritos aparecem no painel.</p>'}
+      : '<p class="muted">Família, vizinhos, médico… Os favoritos aparecem no Painel.</p>'}
   </section>`;
 }
 function contactForm(c) {
@@ -636,7 +636,6 @@ function contactForm(c) {
 function viewGroups() {
   return `
   <div class="toolbar">
-    <p class="muted small">Cada grupo é independente. Partilhe-o uma vez com cada membro (ficheiro cifrado); depois, com internet, todas as alterações chegam sozinhas a todos.</p>
     <span class="spacer"></span>
     <button class="btn" data-act="import">Importar</button>
     <button class="btn primary" data-act="addGroup">+ Grupo</button>
@@ -653,7 +652,7 @@ function viewGroups() {
         <div class="muted small">Ponto de encontro</div><strong>${esc(g.meetingPoint || 'sem nome')}</strong>
         ${hasCoords(g) ? `<div class="mono small muted">${fmtCoords(g)}</div>${navLinks(g, g.meetingPoint)}` : ''}</div></div>` : ''}
       ${g.notes ? `<p class="muted">${esc(g.notes)}</p>` : ''}
-      ${g.chat && !g.sharedAt && !g.imported ? '<p class="note">Partilhe este grupo com cada membro (botão Partilhar). A partir daí, tudo o que mudar no grupo é sincronizado automaticamente.</p>' : ''}
+      ${g.chat && !g.sharedAt && !g.imported ? '<p class="note">Partilhe o grupo com cada membro para sincronizar.</p>' : ''}
       <ul class="list">${liveMembers(g).map(m => `
         <li class="row"><div class="row-main" data-act="editMember" data-id="${g.id}" data-mid="${m.id}">
           <div class="row-title">${esc(m.name)}${m.role ? ` <span class="badge">${esc(m.role)}</span>` : ''}</div>
@@ -701,8 +700,8 @@ function memberForm(g, m) {
       { k: 'role', label: 'Papel (ex.: responsável, criança)' },
       { k: 'bitchat', label: 'Nome no bitchat (para mensagens privadas sem internet)' },
       { k: 'needs', label: 'Necessidades especiais (mobilidade, medicação…)', type: 'textarea' },
-      { type: 'info', html: 'Informação de saúde é uma <strong>categoria especial</strong> de dados (art. 9.º RGPD). Só guarde com o consentimento explícito da pessoa.' },
-      { k: 'consent', label: 'A pessoa deu consentimento para guardar estes dados e partilhá-los (cifrados) com os membros deste grupo', type: 'checkbox' },
+      { type: 'info', html: 'Dados de saúde: só com consentimento da pessoa.' },
+      { k: 'consent', label: 'A pessoa consentiu partilhar estes dados com o grupo', type: 'checkbox' },
     ],
     onSave(v) {
       if (v.needs && !v.consent) { toast('Para guardar necessidades especiais é preciso o consentimento.'); return false; }
@@ -740,7 +739,7 @@ function viewGuide() {
     <details class="card guide"><summary>${icon(GUIDE_ICONS[g.id] || 'alert')} ${esc(g.title)}</summary>
       <ol>${g.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
     </details>`).join('') +
-    '<p class="muted small">Informação geral. Siga sempre as indicações das autoridades locais (ANEPC, 112).</p>';
+    '<p class="muted small">Siga sempre as indicações das autoridades.</p>';
 }
 
 function viewAlerts() {
@@ -760,7 +759,6 @@ function viewAlerts() {
   <section class="card">
     <h3>Fontes oficiais</h3>
     <ul class="list">${ALERT_SOURCES.map(s => `<li class="row"><div class="row-main"><div class="row-title"><a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a></div><div class="row-sub">${esc(s.note)}</div></div></li>`).join('')}</ul>
-    <p class="muted small">Em emergência siga sempre as indicações das autoridades e os alertas recebidos no telemóvel.</p>
   </section>`;
 }
 
@@ -787,13 +785,12 @@ function viewMap() {
         <div class="row-sub"><strong>${fmtDist(d)}</strong> para ${bearing(ui.pos, p)} · <span class="mono">${fmtCoords(p)}</span>${p.cap ? ` · capacidade ${p.cap.toLocaleString('pt-PT')} pessoas` : ''}</div>
         <div class="row-sub">${navLinks(p, p.n)}</div>
       </div></li>`).join('')}</ul>`
-      : '<p class="muted">Carregue em "Onde estou". O GPS funciona sem internet: a distância e a direção aos pontos são calculadas no dispositivo.</p>'}
+      : '<p class="muted">Carregue em "Onde estou". Funciona sem internet.</p>'}
   </section>
   <section class="card">
     <h3>Dados oficiais</h3>
     <ul class="plain">${POINTS_META.sources.map(s => `<li><strong>${esc(s.m)}</strong>: <a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a> — ${esc(s.license)}</li>`).join('')}</ul>
-    <p class="muted small">${POINTS.length} pontos incluídos na app (disponíveis offline).${at ? ' Lisboa atualizada em ' + new Date(at).toLocaleString('pt-PT') + '.' : ''}
-      Outros municípios ainda não publicam estes dados em formato aberto; confirme sempre no Plano Municipal de Emergência do seu concelho.</p>
+    <p class="muted small">${POINTS.length} pontos, disponíveis offline.${at ? ' Lisboa atualizada em ' + new Date(at).toLocaleString('pt-PT') + '.' : ''}</p>
     <button class="btn" data-act="refreshLisboa" ${ui.pointsLoading ? 'disabled' : ''}>${ui.pointsLoading ? 'A atualizar…' : 'Atualizar pontos de Lisboa'}</button>
   </section>`;
 }
@@ -804,7 +801,7 @@ function initMap() {
   if (map) { ui.mapView = ui.recenter ? null : [map.getCenter(), map.getZoom()]; map.remove(); map = null; }
   if (ui.recenter && ui.pos) ui.recenter = false;
   if (!el) return;
-  if (!window.L) { el.innerHTML = '<p class="empty">Mapa indisponível sem internet (abra-o uma vez com rede). A lista abaixo funciona offline.</p>'; return; }
+  if (!window.L) { el.innerHTML = '<p class="empty">Mapa indisponível sem internet. A lista funciona.</p>'; return; }
   map = L.map(el);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, crossOrigin: true, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
   const popup = (p, title) => `<strong>${esc(title)}</strong><br>${esc(p.m || '')}${p.f ? ' · ' + esc(p.f) : ''}${p.cap ? '<br>Capacidade: ' + Number(p.cap).toLocaleString('pt-PT') : ''}<br><span class="mono">${fmtCoords(p)}</span><br>${navLinks(p, title)}`;
@@ -840,7 +837,7 @@ function viewSettings() {
   </section>
   <section class="card">
     <h3>Ordem dos menus</h3>
-    <p class="muted small">As quatro primeiras secções aparecem na barra inferior do telemóvel; as restantes ficam em "Mais".</p>
+    <p class="muted small">As 4 primeiras ficam na barra inferior.</p>
     <ol class="list nav-order">${navOrder().map((k, i, o) => `
       <li class="row ${i === 3 ? 'nav-cut' : ''}"><span class="cat-ic">${icon(ROUTES[k][1])}</span>
         <div class="row-main"><div class="row-title">${esc(ROUTES[k][0])}</div>${i < 4 ? '<div class="row-sub">Barra principal</div>' : ''}</div>
@@ -855,13 +852,13 @@ function viewSettings() {
       <button class="btn" data-act="enableNotif" ${notif !== 'default' ? 'disabled' : ''}>${notif === 'granted' ? 'Notificações ativas' : notif === 'denied' ? 'Notificações bloqueadas' : 'Ativar notificações'}</button>
       <button class="btn" data-act="exportIcs">Validades para o calendário</button>
     </div>
-    <p class="muted small">As notificações aparecem quando abre a app. Para lembretes mesmo com a app fechada, exporte as validades para o calendário do telemóvel.</p>
+    <p class="muted small">Com a app fechada, use o calendário.</p>
   </section>
   <section class="card form">
     <h3>Chat dos grupos</h3>
     <label for="relays">Relays Nostr (um por linha; vazio = predefinidos)</label>
     <textarea id="relays" rows="3" data-change="relays" placeholder="${DEFAULT_RELAYS.join('\n')}">${esc((S.settings.relays || []).join('\n'))}</textarea>
-    <p class="muted small">Pode usar um relay próprio ou da sua organização. Os relays só recebem mensagens cifradas.</p>
+    <p class="muted small">Os relays só recebem texto cifrado.</p>
     ${S.settings.blocked?.length ? `<p class="small">${S.settings.blocked.length} remetente(s) bloqueado(s). <button class="linkbtn" data-act="unblockAll">Desbloquear todos</button></p>` : ''}
   </section>
   <section class="card">
@@ -872,13 +869,8 @@ function viewSettings() {
     </div>
   </section>
   <section class="card">
-    <h3>Privacidade (RGPD)</h3>
-    <ul class="plain">
-      <li>Todos os dados ficam <strong>apenas neste dispositivo</strong>. Não há contas nem servidor.</li>
-      <li>A partilha de um grupo exporta só esse grupo, cifrado com palavra-passe (AES-256).</li>
-      <li>Dados de saúde de membros só são guardados com consentimento explícito registado.</li>
-      <li>Pode apagar tudo a qualquer momento (direito ao apagamento).</li>
-    </ul>
+    <h3>Privacidade</h3>
+    <p class="muted small">Os dados ficam neste dispositivo. <a href="#/sobre">Saber mais</a></p>
     <button class="btn danger" data-act="wipe">Apagar todos os dados</button>
   </section>`;
 }
@@ -1075,21 +1067,15 @@ function bitchatCard(g, offline) {
   const nicks = liveMembers(g).filter(m => m.bitchat);
   return `<details class="card bitchat ${offline ? 'urgent' : ''}" ${offline ? 'open' : ''}>
     <summary>${icon('bt')}<span><strong>${offline ? 'Sem internet: continue pelo bitchat' : 'Sem internet? Use o bitchat'}</strong>
-      <span class="muted small">Mensagens por Bluetooth, de telemóvel em telemóvel</span></span></summary>
-    <ol class="steps">
-      <li>Todos no grupo instalam o bitchat <strong>antes</strong> de uma emergência
-        (<a href="https://github.com/permissionlesstech/bitchat" target="_blank" rel="noopener">iPhone</a> ·
-        <a href="https://github.com/permissionlesstech/bitchat-android" target="_blank" rel="noopener">Android</a>).</li>
-      <li>Toque em <strong>Enviar pelo bitchat</strong>, escolha o bitchat na partilha e depois o destino.
-        Se não escrever nada, segue "estou bem" com o ponto de encontro e o GPS.</li>
-    </ol>
+      <span class="muted small">Bluetooth, sem rede</span></span></summary>
+    <p class="small">Instale antes de precisar: <a href="https://github.com/permissionlesstech/bitchat" target="_blank" rel="noopener">iPhone</a> · <a href="https://github.com/permissionlesstech/bitchat-android" target="_blank" rel="noopener">Android</a></p>
     <div class="grid-buttons">
       <button class="btn primary" data-act="shareBitchat" data-id="${g.id}">${icon('share')} Enviar pelo bitchat</button>
       <a class="btn" href="bitchat://">${icon('bt')} Abrir bitchat</a>
     </div>
-    <p class="note">O canal <strong>#mesh</strong> é público: qualquer pessoa por perto lê. Para assuntos privados, envie <strong>mensagem privada</strong> a cada membro.</p>
+    <p class="note"><strong>#mesh</strong> é público. Assuntos privados: mensagem privada.</p>
     ${nicks.length ? `<p class="muted small">Nomes no bitchat: ${nicks.map(m => `<strong>${esc(m.name)}</strong> → <span class="mono">${esc(m.bitchat)}</span>`).join(' · ')}</p>`
-      : '<p class="muted small">Dica: em Grupos, registe o nome de cada pessoa no bitchat para as encontrar depressa.</p>'}
+      : ''}
   </details>`;
 }
 
@@ -1117,18 +1103,18 @@ function viewChat() {
 // [título, ícone, ecrã, nível] — nível 1: barra principal; 0: dentro de "Mais"; 2: o próprio "Mais"
 const ROUTES = {
   painel: ['Painel', 'home', viewDashboard, 1, 'Resumo da sua preparação e dos avisos'],
-  kit: ['Kit de emergência', 'kit', viewKit, 1, 'Lista recomendada para 72 horas de autonomia, ajustada ao seu agregado. Reveja-a a cada seis meses.'],
-  mapa: ['Pontos de encontro', 'map', viewMap, 1, 'Os pontos do seu grupo e os pontos oficiais publicados pelos municípios. A distância funciona sem internet.'],
-  alertas: ['Avisos', 'alert', viewAlerts, 1, 'Avisos meteorológicos do IPMA para a sua zona. Em caso de dúvida, prevalece sempre a informação oficial.'],
-  contactos: ['Contactos', 'phone', viewContacts, 0, 'Números de emergência e contactos pessoais'],
+  kit: ['Kit de emergência', 'kit', viewKit, 1, '72 horas de autonomia para a sua casa.'],
+  mapa: ['Pontos de encontro', 'map', viewMap, 1, 'Do seu grupo e oficiais dos municípios.'],
+  alertas: ['Avisos', 'alert', viewAlerts, 1, 'IPMA, para a sua zona.'],
+  contactos: ['Contactos', 'phone', viewContacts, 0, 'Emergência e pessoais'],
   grupos: ['Grupos', 'users', viewGroups, 0, 'Família, vizinhos, pontos de encontro'],
-  listas: ['Listas', 'list', viewLists, 0, 'Evacuação, revisão do kit, listas próprias'],
-  guia: ['Guia', 'book', viewGuide, 0, 'O que fazer em sismo, inundação, incêndio…'],
-  definicoes: ['Definições', 'settings', viewSettings, 0, 'Agregado, lembretes, cópia de segurança, privacidade'],
-  sobre: ['Sobre e princípios', 'shield', viewAbout, 0, 'Missão, utilização responsável e proteção de dados'],
+  listas: ['Listas', 'list', viewLists, 0, 'Evacuação e revisão do kit'],
+  guia: ['Guia', 'book', viewGuide, 0, 'O que fazer em cada situação'],
+  definicoes: ['Definições', 'settings', viewSettings, 0, 'Agregado, lembretes, dados'],
+  sobre: ['Sobre e princípios', 'shield', viewAbout, 0, 'Missão, princípios, privacidade'],
   mais: ['Mais', 'more', viewMore, 2, ''],
 };
-ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Mensagens cifradas entre os membros. Sem internet, continue pelo bitchat.'];
+ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Cifrado entre os membros.'];
 const route = () => {
   const r = location.hash.slice(2);
   if (r.startsWith('chat/')) { ui.chatGroup = r.slice(5); return 'chat'; }
@@ -1140,8 +1126,7 @@ const NAV_SHORT = { kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre' 
 function pageHead(r, title) {
   if (r === 'painel') {
     const d = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
-    return `<header class="page-head"><span class="eyebrow">${esc(d)}</span><h1>A sua preparação</h1>
-      <p>Uma casa preparada protege quem lá vive e quem precisa de ajuda à volta. Comece pelo que falta.</p></header>`;
+    return `<header class="page-head"><span class="eyebrow">${esc(d)}</span><h1>A sua preparação</h1></header>`;
   }
   const desc = ROUTES[r][4];
   return `<header class="page-head"><h1>${esc(title)}</h1>${desc ? `<p>${esc(desc)}</p>` : ''}</header>`;
@@ -1151,22 +1136,20 @@ function viewAbout() {
   return `
   <section class="card">
     <h3>A nossa missão</h3>
-    <p>A eKit ajuda pessoas e famílias a prepararem-se para emergências, seguindo as recomendações europeias de autonomia durante 72 horas.
-      Reúne num só lugar o kit, as validades, os contactos, os pontos de encontro e a comunicação entre quem mais importa.</p>
-    <p class="note"><strong>A eKit não substitui as autoridades.</strong> É uma iniciativa independente, não um serviço oficial.
-      Em emergência ligue <a href="tel:112">112</a> e siga sempre as indicações da proteção civil e do seu município.</p>
+    <p>Preparar pessoas e famílias para emergências: kit de 72 horas, pontos de encontro e comunicação.</p>
+    <p class="note"><strong>Não é um serviço oficial.</strong> Em emergência, ligue <a href="tel:112">112</a>.</p>
   </section>
 
   <section class="card">
     <h3>Princípios de utilização responsável</h3>
     <ol class="principles">
-      <li><div><strong>A informação oficial vem primeiro.</strong>Use a eKit para se preparar; em crise, confirme sempre nas fontes oficiais e não partilhe rumores.</div></li>
-      <li><div><strong>Ligue 112 apenas em emergência.</strong>Para dúvidas de saúde use o SNS 24 (808 24 24 24). Se ligar por engano, não desligue: explique ao operador.</div></li>
-      <li><div><strong>Partilhe dados de outras pessoas só com o seu consentimento.</strong>Sobretudo dados de saúde de familiares, que são dados especialmente protegidos.</div></li>
-      <li><div><strong>Mantenha o kit em dia.</strong>Reveja validades e quantidades a cada seis meses e sempre que a família mudar.</div></li>
-      <li><div><strong>Combine o plano antes da emergência.</strong>Ponto de encontro, quem vai buscar quem e como comunicar sem internet.</div></li>
-      <li><div><strong>Use o chat com sobriedade.</strong>Mensagens curtas e úteis: onde está, como está, do que precisa.</div></li>
-      <li><div><strong>Lembre-se de quem está à sua volta.</strong>Vizinhos idosos, pessoas com mobilidade reduzida ou sozinhas podem precisar de si.</div></li>
+      <li><div><strong>A informação oficial vem primeiro.</strong>Confirme nas fontes oficiais; não partilhe rumores.</div></li>
+      <li><div><strong>Ligue 112 apenas em emergência.</strong>Dúvidas de saúde: SNS 24.</div></li>
+      <li><div><strong>Partilhe dados de outras pessoas só com o seu consentimento.</strong></div></li>
+      <li><div><strong>Mantenha o kit em dia.</strong>Reveja-o a cada seis meses.</div></li>
+      <li><div><strong>Combine o plano antes da emergência.</strong>Onde se encontram e como comunicam.</div></li>
+      <li><div><strong>Use o chat com sobriedade.</strong>Onde está, como está, do que precisa.</div></li>
+      <li><div><strong>Lembre-se de quem está à sua volta.</strong>Vizinhos idosos ou sozinhos.</div></li>
     </ol>
   </section>
 
@@ -1178,7 +1161,7 @@ function viewAbout() {
       <div class="fact">${icon('shield')}<strong>Consentimento registado</strong><span class="muted small">Dados de saúde exigem o consentimento explícito da pessoa.</span></div>
       <div class="fact">${icon('wifioff')}<strong>Funciona offline</strong><span class="muted small">Sem rede, o essencial continua disponível.</span></div>
     </div>
-    <p class="muted small">Pode exportar ou apagar todos os seus dados a qualquer momento nas <a href="#/definicoes">Definições</a>. A eKit não usa publicidade, rastreio nem análise de utilização. <a href="privacidade.html">Ler a política de privacidade completa</a>.</p>
+    <p class="muted small">Sem publicidade nem rastreio. <a href="privacidade.html">Política de privacidade</a></p>
   </section>
 
   <section class="card">
@@ -1240,7 +1223,7 @@ const findList = id => S.lists.find(l => l.id === id);
 
 const actions = {
   blockSender: d => {
-    if (!confirm(`Bloquear "${d.name}" (#${d.pk.slice(0, 4)})? Deixa de ver as mensagens deste dispositivo. Para o retirar do grupo, crie uma nova chave e partilhe o grupo só com quem fica.`)) return 'async';
+    if (!confirm(`Bloquear "${d.name}" (#${d.pk.slice(0, 4)})? Deixa de ver as mensagens deste dispositivo.`)) return 'async';
     S.settings.blocked = [...new Set([...(S.settings.blocked || []), d.pk])];
     save(); renderChatLog(); toast('Remetente bloqueado neste dispositivo.');
     return 'async';
@@ -1251,7 +1234,7 @@ const actions = {
   navReset: () => { S.settings.navOrder = []; },
   rotateChat: d => {
     const g = findGroup(d.id);
-    if (!confirm('Criar uma nova chave? Quem não receber o grupo partilhado de novo deixa de ler as mensagens novas.')) return 'async';
+    if (!confirm('Criar nova chave? Só quem receber o grupo de novo continua a ler.')) return 'async';
     newChatConfig().then(cfg => { g.chat = cfg; g.sharedAt = ''; delete (S.chat || {})[g.id]; markDirty(g); startHub(); render(); toast('Nova chave criada. Partilhe o grupo com os membros atuais.'); });
     return 'async';
   },
@@ -1305,7 +1288,7 @@ function confirm112() {
   const alts = EMERGENCY_NUMBERS.filter(n => n.phone !== '112');
   d.innerHTML = `<div class="form call-confirm">
     <h2>Ligar 112?</h2>
-    <p>O 112 é para <strong>emergências</strong>: perigo imediato para a vida, a saúde, a segurança ou os bens.</p>
+    <p>Só em <strong>perigo imediato</strong> para pessoas ou bens.</p>
     <ul class="plain small">
       <li>Alguém inconsciente, sem respirar ou com uma ferida grave</li>
       <li>Incêndio, acidente grave, inundação ou desabamento</li>
@@ -1318,7 +1301,7 @@ function confirm112() {
       <li class="row"><div class="row-main"><div class="row-title">Avisos meteorológicos</div><div class="row-sub">Informação do IPMA para a sua zona</div></div>
       <a class="btn" href="#/alertas" data-close>Ver avisos</a></li>
     </ul>
-    <p class="note">Ligou por engano? <strong>Não desligue</strong>: diga ao operador que foi engano. Chamadas indevidas ocupam linhas de que alguém pode precisar.</p>
+    <p class="note">Ligou por engano? <strong>Não desligue</strong>: explique ao operador.</p>
     <div class="form-actions"><span class="spacer"></span><button type="button" class="btn" data-close>Cancelar</button></div>
   </div>`;
   d.querySelectorAll('[data-close], [data-confirmed]').forEach(b => b.addEventListener('click', () => setTimeout(() => d.close(), 0)));
@@ -1376,9 +1359,9 @@ function onboarding() {
     submitLabel: 'Começar',
     values: { household: S.settings.household, district: S.settings.district, makeGroup: true },
     fields: [
-      { type: 'info', html: 'Três perguntas rápidas para ajustar o kit à sua casa. Tudo fica guardado só neste dispositivo.' },
+      { type: 'info', html: 'Fica tudo guardado neste dispositivo.' },
       { k: 'household', label: 'Quantas pessoas vivem em casa?', type: 'number' },
-      { k: 'district', label: 'Distrito ou região (para os avisos)', type: 'select', options: Object.entries(IPMA_AREAS) },
+      { k: 'district', label: 'Distrito (para os avisos)', type: 'select', options: Object.entries(IPMA_AREAS) },
       { k: 'makeGroup', label: 'Definir agora o ponto de encontro da família', type: 'checkbox' },
     ],
     onSave(v) {
