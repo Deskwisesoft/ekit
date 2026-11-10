@@ -50,7 +50,7 @@ O programador não recolhe dados: tudo fica no dispositivo e o que sai vai cifra
 
 ## 5. Cifra (exportação)
 
-A app usa cifra padrão (AES-GCM, SHA-256, assinaturas Schnorr) para proteger os dados do utilizador. Responda ao questionário de exportação em App Store Connect. Em geral, apps que só usam algoritmos padrão para proteger dados do utilizador ficam isentas de documentação, mas a distribuição em França pode exigir declaração. Verifique as regras em vigor.
+Resposta dada na App Store Connect: **"Nenhum dos algoritmos indicados acima"**. A cifra dos dados (AES-256-GCM, PBKDF2) é feita pela WebCrypto do iOS; a biblioteca Nostr só faz assinaturas digitais e hashes, que são autenticação. O `codemagic.yaml` acrescenta `ITSAppUsesNonExemptEncryption = false` ao Info.plist, para a pergunta não se repetir em cada build. Se a app passar a usar cifra própria, esta declaração tem de ser revista.
 
 ## 6. Notas para a revisão da Apple (copiar para "Notes")
 
