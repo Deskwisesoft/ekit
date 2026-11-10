@@ -28,7 +28,7 @@ const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes'];
 const MEMBER_FIELDS = ['name', 'phone', 'role', 'bitchat', 'needs', 'allergies', 'meds', 'blood', 'consentAt'];
 const HEALTH_FIELDS = ['needs', 'allergies', 'meds', 'blood'];
 // Secções que podem ir para a barra: as 4 primeiras ficam no telemóvel, o resto vai para o Menu.
-const NAV_KEYS = ['painel', 'kit', 'mapa', 'alertas', 'contactos', 'grupos', 'guia'];
+const NAV_KEYS = ['painel', 'preparar', 'grupos', 'mapa', 'kit', 'alertas', 'contactos', 'guia'];
 const arr = v => (Array.isArray(v) ? v : []);
 const str = (v, max = 500) => (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, max);
 const num = (v, d = 0) => (v !== '' && v != null && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -113,7 +113,7 @@ function cleanState(s) {
     chatNotify: st.chatNotify !== false, chatPreview: st.chatPreview !== false,
     autoDistrict: st.autoDistrict !== false,
     radio: str(st.radio, 60), lastBackup: num(st.lastBackup), mapSaved: num(st.mapSaved), mapSavedN: num(st.mapSavedN),
-    lastDrill: num(st.lastDrill), drillSnooze: num(st.drillSnooze),
+    lastDrill: num(st.lastDrill), drillSnooze: num(st.drillSnooze), phoneReady: !!st.phoneReady,
   };
   out.kit = Array.isArray(s.kit) ? s.kit.map(i => ({
     id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
@@ -703,6 +703,10 @@ const ICONS = {
   heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>',
   wifioff: '<path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.8M19 12.9a10 10 0 0 0-2.3-1.6M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.7 5M12 20h.01"/>',
   paw: '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.05Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  circle: '<circle cx="12" cy="12" r="9"/>',
+  checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  radio: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8 17 3"/><circle cx="8" cy="14" r="2"/><path d="M14 12h4M14 16h4"/>',
   star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
 };
 const CAT_ICONS = { agua: 'drop', saude: 'health', energia: 'bolt', docs: 'doc', abrigo: 'tool', outros: 'box' };
@@ -776,92 +780,91 @@ function openForm({ title, fields, values = {}, onSave, onDelete, submitLabel = 
 }
 
 // ---------- Ecrãs ----------
+// ---------- Início: "O que precisa agora?" ----------
+// Duas portas (emergência / preparar) e o estado da sua zona agora. Nada mais.
+function nowRows() {
+  const rows = [];
+  const qk = strongQuake();
+  if (qk) rows.push(['bad', 'quake', `Sismo de magnitude ${qk.mag.toFixed(1).replace('.', ',')}`, `${qk.reg} · ${quakeWhen(qk)}`, '#/emergencia']);
+  districtAlerts().slice().sort((x, y) => SEV[y.awarenessLevelID] - SEV[x.awarenessLevelID]).slice(0, 2).forEach(w => {
+    const [lvl, cls] = LEVELS[w.awarenessLevelID];
+    rows.push([cls, 'alert', `${w.awarenessTypeName} · aviso ${lvl.toLowerCase()}`, alertWhen(w), '#/alertas']);
+  });
+  const fr = fireRiskHere();
+  if (fr && fr.today >= 3) rows.push([fr.today >= 4 ? 'bad' : 'warn', 'flame', `Risco de incêndio ${FIRE_LEVELS[fr.today].toLowerCase()}`, 'Hoje · sem queimadas nem fogo', '#/alertas']);
+  if (!rows.length) rows.push(['good', 'check', 'Sem avisos', S.alertsCache?.at ? 'Atualizado ' + new Date(S.alertsCache.at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }) : 'Abra com internet para atualizar', '#/alertas']);
+  return rows.map(([cls, ic, t, sub, href]) => `<a class="now-row ${cls}" href="${href}">${icon(ic)}<span class="now-t"><strong>${esc(t)}</strong><small>${esc(sub)}</small></span><span class="chev" aria-hidden="true">›</span></a>`).join('');
+}
 function viewDashboard() {
-  const st = stats();
-  const alerts = districtAlerts();
-  const meeting = S.groups.filter(g => g.meetingPoint || hasCoords(g));
-  const top = alerts.find(w => SEV[w.awarenessLevelID] >= 2);
-  const others = alerts.filter(w => w !== top);
-  const favs = S.contacts.filter(c => c.priority).slice(0, 4);
-  const chips = [
-    st.missing && `<a class="chip" href="#/kit" data-act="kitFilter" data-v="missing">${st.missing} em falta</a>`,
-    st.expiring && `<a class="chip warn" href="#/kit" data-act="kitFilter" data-v="expiring">${st.expiring} a expirar</a>`,
-    st.expired && `<a class="chip bad" href="#/kit" data-act="kitFilter" data-v="expiring">${st.expired} expirado(s)</a>`,
-  ].filter(Boolean).join('');
-  const todo = CATEGORIES.flatMap(c => S.kit.filter(i => i.cat === c.id && need(i) > 0 && !isOk(i))).slice(0, 3);
-  const kitCard = `
-  <section class="card hero">
-    <div class="ring" style="--p:${st.pct}"><span>${st.pct}%</span></div>
-    <div class="hero-body">
-      <h2>Kit ${st.pct === 100 ? 'completo' : 'preparado a ' + st.pct + '%'}</h2>
-      <p class="muted">${S.settings.household} pessoa(s) · autonomia de 72 horas · <a href="#/definicoes">alterar</a></p>
-      ${chips ? `<div class="chips">${chips}</div>` : ''}
-      ${todo.length ? `<div class="next">
-        <div class="muted small">Próximos passos</div>
-        <ol class="next-list">${todo.map(i => `<li>${esc(i.name.replace(/\s*\(.*\)$/, ''))} <span class="muted">· ${need(i)} ${esc(i.unit)}</span></li>`).join('')}</ol>
-        <a class="btn primary" href="#/kit" data-act="kitFilter" data-v="missing">${st.pct ? 'Continuar o kit' : 'Começar o kit'} →</a>
-      </div>` : ''}
-    </div>
-  </section>`;
-  const pos = myPos(), near = pos && POINTS.length ? nearestOfficial(pos) : null;
-  const nearHtml = !pos
-    ? `<div class="locate-cta"><button class="btn" data-act="useLocation">${icon('pin')} Usar a minha localização</button>
-        <span class="muted small">Mostra o ponto oficial mais próximo e os avisos da sua zona.</span></div>`
+  const steps = planSteps(), done = steps.filter(x => x.done).length;
+  const pos = myPos(), g = S.groups.find(x => x.meetingPoint || hasCoords(x));
+  const near = !g && pos && POINTS.length ? nearestOfficial(pos) : null;
+  const meet = g
+    ? `<a class="now-row" href="#/mapa">${icon('pin')}<span class="now-t"><strong>${esc(g.meetingPoint || fmtCoords(g))}</strong><small>Ponto de encontro${pos && hasCoords(g) ? ' · ' + fmtDist(distanceKm(pos, g)) : ''}</small></span><span class="chev" aria-hidden="true">›</span></a>`
     : near && near.d <= 25
-      ? `<div class="meet near">${icon('pin')}<div class="meet-body">
-          <div class="muted small">Ponto oficial mais próximo · ${fmtDist(near.d)} para ${bearing(pos, near.p)}</div>
-          <strong>${esc(near.p.n)}</strong> <span class="muted small">${esc(near.p.m)}${near.p.t === 'Tsunami' ? ' · tsunami' : ''}</span>
-          ${navLinks(near.p, near.p.n)}</div></div>`
-      : '<p class="muted small">Ainda não há pontos oficiais publicados perto de si. Combine um ponto com a família em Grupos.</p>';
-  const qk = strongQuake(), fr = fireRiskHere();
+      ? `<a class="now-row" href="#/mapa">${icon('pin')}<span class="now-t"><strong>${esc(near.p.n)}</strong><small>Ponto oficial mais próximo · ${fmtDist(near.d)}</small></span><span class="chev" aria-hidden="true">›</span></a>`
+      : `<a class="now-row" href="#/grupos">${icon('pin')}<span class="now-t"><strong>Definir ponto de encontro</strong><small>Onde a família se encontra</small></span><span class="chev" aria-hidden="true">›</span></a>`;
   return `
-  <a class="sos-entry" href="#/emergencia">${icon('alert')} Modo emergência</a>
-  ${qk ? quakeBanner(qk) : ''}
-  ${fr && fr.today >= 4 ? `<a class="alert-banner ${fr.today === 5 ? 'bad' : 'orange'}" href="#/alertas">${icon('flame')}
-    <div><strong>Risco de incêndio ${FIRE_LEVELS[fr.today].toLowerCase()} hoje</strong><span>${fr.own ? 'No seu concelho' : 'No seu distrito'} · Sem queimadas nem fogo</span></div>
-    <span class="chev" aria-hidden="true">›</span></a>` : ''}
-  ${top ? alertBanner(top, others.length) : ''}
-  ${st.pct < 100 ? kitCard : ''}
+  <a class="door sos" href="#/emergencia">${icon('alert')}<span class="door-t"><strong>Há uma emergência</strong><small>Avisar a família, para onde ir, o que fazer</small></span><span class="chev" aria-hidden="true">›</span></a>
+  <a class="door" href="#/preparar">${icon('list')}<span class="door-t"><strong>Preparar-me</strong><small>${done === steps.length ? 'Plano completo' : `${done} de ${steps.length} passos feitos`}</small>
+    <span class="bar"><i style="width:${Math.round((done / steps.length) * 100)}%"></i></span></span><span class="chev" aria-hidden="true">›</span></a>
+  <section class="card now">
+    <h3>Agora · ${esc(IPMA_AREAS[S.settings.district] || '')}</h3>
+    ${nowRows()}
+    ${meet}
+    ${!pos ? `<button class="linkbtn small" data-act="useLocation">${icon('pin')} Usar a minha localização para a zona e o ponto mais próximo</button>` : ''}
+  </section>`;
+}
 
+// ---------- Preparar: plano em passos + tudo em mosaicos ----------
+function planSteps() {
+  const st = stats(), drillOk = S.settings.lastDrill && Date.now() - S.settings.lastDrill < 182 * 864e5;
+  const people = S.groups.reduce((n, g) => n + liveMembers(g).length, 0);
+  const g = S.groups.find(x => x.meetingPoint || hasCoords(x));
+  return [
+    { t: 'Família e contactos', done: people > 1 || S.contacts.length > 0, sub: people ? `${people} pessoa(s) no grupo` : 'Quem contactar e com quem se encontrar', href: '#/grupos' },
+    { t: 'Ponto de encontro', done: !!g, sub: g ? (g.meetingPoint || fmtCoords(g)) : 'Onde a família se encontra', href: '#/grupos' },
+    { t: 'Kit de 72 horas', done: st.pct === 100, sub: st.pct === 100 ? 'Completo' : `${st.pct}% · ${st.missing} em falta`, href: '#/kit' },
+    { t: 'Telemóvel preparado', done: !!S.settings.phoneReady, sub: 'Alertas de emergência e ficha médica', href: '#/guia', act: 'phoneReady', actLabel: 'Já fiz' },
+    { t: 'Mapa sem internet', done: !!S.settings.mapSaved, sub: S.settings.mapSaved ? 'Guardado' : 'Guardar a zona de casa e do ponto', href: '#/mapa' },
+    { t: 'Simulacro com a família', done: !!drillOk, sub: drillOk ? 'Feito em ' + new Date(S.settings.lastDrill).toLocaleDateString('pt-PT') : 'Ir juntos ao ponto de encontro', act: 'drillDone', actLabel: 'Fizemos hoje' },
+  ];
+}
+function viewPrepare() {
+  const st = stats(), steps = planSteps(), done = steps.filter(x => x.done).length;
+  const people = S.groups.reduce((n, g) => n + liveMembers(g).length, 0), pets = S.groups.reduce((n, g) => n + livePets(g).length, 0);
+  const alerts = districtAlerts().length, g = S.groups.find(x => hasCoords(x)), pos = myPos();
+  const tiles = [
+    ['#/kit', 'kit', 'Kit', `${st.pct}%${st.missing ? ' · faltam ' + st.missing : ''}`, st.pct < 100 ? 'warn' : 'good'],
+    ['#/grupos', 'users', 'Família', people ? `${people} pessoa(s)${pets ? ' · ' + pets + ' animal(is)' : ''}` : 'Criar grupo', ''],
+    ['#/mapa', 'map', 'Mapa', g && pos ? fmtDist(distanceKm(pos, g)) + ' do ponto' : 'Pontos de encontro', ''],
+    ['#/alertas', 'alert', 'Avisos', alerts ? `${alerts} ativo(s)` : 'Sem avisos', alerts ? 'bad' : ''],
+    ['#/contactos', 'phone', 'Contactos', 'Números úteis', ''],
+    ['#/guia', 'book', 'O que fazer', 'Guias e listas', ''],
+    ['#/cartao', 'list', 'Cartão', 'Para imprimir', ''],
+    ['#/definicoes', 'radio', 'Rádio', (RADIO_A1[S.settings.district] || '').split(' · ')[0], ''],
+  ];
+  return `
   <section class="card">
-    <a class="btn call-line big" href="tel:112">${icon('phone')} Ligar 112</a>
-    ${favs.length ? `<div class="grid-buttons">${favs.map(c => `<a class="btn" href="${telHref(c.phone)}">${icon('phone')} ${esc(c.name)}</a>`).join('')}</div>` : ''}
-    ${meeting.map(g => `<div class="meet">${icon('pin')}<div>
-        <div class="muted small">Ponto de encontro · ${esc(g.name)}</div>
-        <strong>${esc(g.meetingPoint || fmtCoords(g))}</strong>
-        ${hasCoords(g) ? navLinks(g, g.meetingPoint) : ''}
-      </div></div>`).join('') || '<p class="muted">Ainda não tem ponto de encontro. <a href="#/grupos">Criar grupo →</a></p>'}
-    ${nearHtml}
-    <a href="#/mapa">Mapa dos pontos de encontro →</a>
+    <h3>O seu plano · ${done} de ${steps.length}</h3>
+    <span class="bar big"><i style="width:${Math.round((done / steps.length) * 100)}%"></i></span>
+    <ol class="steps">${steps.map(x => `<li class="step ${x.done ? 'done' : ''}">
+      ${x.href ? `<a class="step-main" href="${x.href}">` : '<div class="step-main">'}${icon(x.done ? 'checkCircle' : 'circle')}
+        <span class="now-t"><strong>${esc(x.t)}</strong><small>${esc(x.sub)}</small></span>${x.href ? '<span class="chev" aria-hidden="true">›</span></a>' : '</div>'}
+      ${!x.done && x.act ? `<button class="btn sm" data-act="${x.act}">${esc(x.actLabel)}</button>` : ''}</li>`).join('')}</ol>
   </section>
-  ${st.pct < 100 ? '' : kitCard}
-
   <section class="card">
-    <h3>${top ? 'Outros avisos' : 'Avisos'} — ${esc(IPMA_AREAS[S.settings.district] || S.settings.district)}</h3>
-    ${S.settings.autoDistrict && S.lastPos ? '<p class="muted small">Zona escolhida pela sua localização.</p>' : ''}
-    ${others.length ? `<ul class="list">${others.slice(0, 3).map(alertCard).join('')}</ul>` : `<p class="muted">${top ? 'Sem outros avisos.' : 'Sem avisos ativos guardados.'}</p>`}
-    <a href="#/alertas">Ver todos os alertas →</a>
+    <h3>Tudo</h3>
+    <div class="tiles">${tiles.map(([href, ic, t, sub, cls]) => `<a class="tile ${cls}" href="${href}">${icon(ic)}<strong>${esc(t)}</strong><small>${esc(sub)}</small></a>`).join('')}</div>
   </section>
-
   ${st.exp.length ? `<section class="card">
-    <h3>Próximas validades</h3>
-    ${st.exp.length ? `<ul class="list">${st.exp.slice(0, 5).map(({ i, e }) => `
+    <h3>A expirar</h3>
+    <ul class="list">${st.exp.slice(0, 5).map(({ i, e }) => `
       <li class="row"><div class="row-main" data-act="editItem" data-id="${i.id}">
         <div class="row-title">${esc(i.name)}</div><div class="row-sub"><span class="badge ${e.cls}">${esc(e.label)}</span></div>
-      </div></li>`).join('')}</ul>` : ''}
+      </div></li>`).join('')}</ul>
   </section>` : ''}
-  ${drillNote()}
   ${backupNote()}`;
-}
-// Simulacro de 6 em 6 meses: é o que faz o plano funcionar no dia em que for preciso.
-function drillNote() {
-  if (!S.groups.some(g => g.meetingPoint || hasCoords(g))) return '';
-  const last = S.settings.lastDrill, due = !last || Date.now() - last > 182 * 864e5;
-  if (!due || Date.now() < S.settings.drillSnooze) return '';
-  return `<section class="card note-card"><h3>${icon('route')} Simulacro</h3>
-    <p>${last ? 'Passaram mais de 6 meses desde o último simulacro.' : 'Ainda não fizeram um simulacro.'} Combinem ir juntos ao ponto de encontro, cada um pelo seu caminho, e confirmem quanto tempo demora.</p>
-    <div class="grid-buttons"><button class="btn primary" data-act="drillDone">Fizemos hoje</button><button class="btn ghost" data-act="drillLater">Lembrar daqui a 1 mês</button></div>
-  </section>`;
 }
 function backupNote() {
   const has = S.groups.length || S.contacts.length || S.kit.some(i => i.have > 0);
@@ -1666,7 +1669,7 @@ function addMsg(gid, m) {
   save();
   renderChatLog();
   markChatRead(gid);
-  if (['grupos', 'painel', 'mais'].includes(route())) { if (!$('#dlg').open) render(); else ui.pendingRender = true; }
+  if (['grupos', 'painel', 'preparar', 'mais'].includes(route())) { if (!$('#dlg').open) render(); else ui.pendingRender = true; }
   else updateNavBadges();
 }
 
@@ -1778,12 +1781,13 @@ function viewChat() {
 // ---------- Router e eventos ----------
 // [título, ícone, ecrã, nível, descrição]
 const ROUTES = {
-  painel: ['Painel', 'home', viewDashboard, 1, 'Resumo da sua preparação e dos avisos'],
+  painel: ['Início', 'home', viewDashboard, 1, ''],
+  preparar: ['Preparar', 'list', viewPrepare, 1, 'O seu plano, passo a passo.'],
   kit: ['Kit de emergência', 'kit', viewKit, 1, '72 horas de autonomia para a sua casa.'],
   mapa: ['Pontos de encontro', 'map', viewMap, 1, 'Do seu grupo e oficiais dos municípios.'],
   alertas: ['Avisos', 'alert', viewAlerts, 1, 'IPMA, para a sua zona.'],
   contactos: ['Contactos', 'phone', viewContacts, 0, 'Emergência e pessoais'],
-  grupos: ['Grupos', 'users', viewGroups, 0, 'Família, vizinhos, pontos de encontro'],
+  grupos: ['Família', 'users', viewGroups, 0, 'Pessoas, animais e pontos de encontro'],
   guia: ['O que fazer', 'book', viewGuide, 0, 'Guias para cada situação e listas de verificação'],
   definicoes: ['Definições', 'settings', viewSettings, 0, 'Agregado, lembretes, dados'],
   sobre: ['Sobre e princípios', 'shield', viewAbout, 0, 'Missão, princípios, privacidade'],
@@ -1809,7 +1813,7 @@ const NAV_SHORT = { kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre',
 function pageHead(r, title) {
   if (r === 'painel') {
     const d = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
-    return `<header class="page-head"><span class="eyebrow">${esc(d)}</span><h1>A sua preparação</h1></header>`;
+    return `<header class="page-head"><span class="eyebrow">${esc(d)}</span><h1>O que precisa agora?</h1></header>`;
   }
   const desc = ROUTES[r][4];
   return `<header class="page-head"><h1>${esc(title)}</h1>${desc ? `<p>${esc(desc)}</p>` : ''}</header>`;
@@ -2111,6 +2115,7 @@ const actions = {
   saveMap: () => { saveMapArea(); return 'async'; },
   drillDone: () => { S.settings.lastDrill = Date.now(); toast('Registado. Próximo lembrete daqui a 6 meses.'); scheduleNativeReminders(); },
   drillLater: () => { S.settings.drillSnooze = Date.now() + 30 * 864e5; },
+  phoneReady: () => { S.settings.phoneReady = true; },
   status: d => { sendStatus(d.v === 'help'); return 'async'; },
   print: () => { window.print(); return 'async'; },
   findServices: () => { findServices(); return 'async'; },
