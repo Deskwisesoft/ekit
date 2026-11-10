@@ -2,7 +2,8 @@ import {
   CATEGORIES, DEFAULT_KIT, EMERGENCY_NUMBERS, DEFAULT_LISTS, GUIDES,
   IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL,
 } from './data.js';
-import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS } from './chat.js';
+import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS, publishInvite, fetchInvite, newInviteCode, normalizeCode } from './chat.js';
+const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
 
 // ---------- Estado (guardado só neste dispositivo) ----------
 const KEY = 'ekit:v1';
@@ -204,7 +205,12 @@ function stats() {
   };
 }
 
-function download(name, text, type = 'application/json') {
+async function download(name, text, type = 'application/json') {
+  const file = new File([text], name, { type });
+  const mobile = native() || /iPhone|iPad|Android/i.test(navigator.userAgent);
+  if (mobile && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = name;
@@ -257,25 +263,90 @@ async function exportPackage(type, payload, filename) {
   });
 }
 
+function importGroupPayload(raw) {
+  const payload = { ...cleanGroup(raw), chat: cleanChatCfg(raw?.chat) };
+  const existing = findGroup(payload.id);
+  if (existing) {
+    mergeGroup(existing, payload);
+    if (payload.chat?.key && payload.chat.key !== existing.chat?.key) existing.chat = payload.chat;
+    toast(`Grupo "${existing.name}" atualizado.`);
+  } else {
+    S.groups.push({ ...payload, imported: true });
+    toast(`Entrou no grupo "${payload.name}".`);
+  }
+  save();
+  setTimeout(() => { S.groups.forEach(setupGroupKey); startHub(); }, 0);
+  if (location.hash !== '#/grupos') location.hash = '#/grupos'; else render();
+}
+
+const relaysList = () => (S.settings.relays?.length ? S.settings.relays : DEFAULT_RELAYS);
+
+// Partilhar com código: o grupo vai cifrado com o próprio código; válido 24 h.
+async function shareGroup(g) {
+  const d = $('#dlg');
+  const show = body => {
+    d.innerHTML = `<div class="form share-dialog"><h2>Partilhar "${esc(g.name)}"</h2>${body}
+      <div class="form-actions"><button type="button" class="btn ghost" data-file>Enviar ficheiro</button><span class="spacer"></span><button type="button" class="btn" data-close>Fechar</button></div></div>`;
+    d.querySelector('[data-close]').onclick = () => d.close();
+    d.querySelector('[data-file]').onclick = () => { d.close(); exportGroupFile(g); };
+    if (!d.open) d.showModal();
+  };
+  if (!navigator.onLine) return show('<p>Precisa de internet para criar o código.</p>');
+  show('<p class="muted">A criar código…</p>');
+  try {
+    await ensureIdentity();
+    if (!g.chat) { g.chat = await newChatConfig(); markDirty(g); startHub(); }
+    const code = newInviteCode();
+    if (!(await publishInvite({ relays: relaysList(), sk: S.nostr.sk, code, payload: { ...groupPayload(g), chat: g.chat } }))) throw new Error('relays');
+    g.sharedAt = new Date().toISOString(); save();
+    const link = `${SITE_URL}#/entrar/${code}`;
+    show(`<p>Dê este código a cada membro:</p>
+      <p class="invite-code" aria-label="Código">${code}</p>
+      <p class="muted small">Válido 24 horas. Na eKit: Grupos → Entrar com código.</p>
+      <div class="grid-buttons"><button type="button" class="btn primary" data-copy>Copiar código</button>
+      ${navigator.share ? '<button type="button" class="btn" data-share>Enviar…</button>' : ''}</div>`);
+    d.querySelector('[data-copy]').onclick = () => navigator.clipboard?.writeText(code).then(() => toast('Código copiado.'), () => toast(code));
+    const sh = d.querySelector('[data-share]');
+    if (sh) sh.onclick = () => navigator.share({ text: `Entre no grupo "${g.name}" na eKit com o código ${code} (válido 24 h): ${link}` }).catch(() => {});
+    if (route() === 'grupos') render();
+  } catch {
+    show('<p>Não foi possível criar o código. Tente de novo ou envie um ficheiro.</p>');
+  }
+}
+
+function joinGroup(prefill = '') {
+  openForm({
+    title: 'Entrar num grupo',
+    values: { code: prefill },
+    fields: [{ k: 'code', label: 'Código (12 caracteres)', required: true }],
+    submitLabel: 'Entrar',
+    async onSave({ code }) {
+      if (normalizeCode(code).length !== 12) { toast('O código tem 12 caracteres.'); return false; }
+      if (!navigator.onLine) { toast('Precisa de internet.'); return false; }
+      toast('A procurar o grupo…');
+      try { await ensureIdentity(); } catch { toast('Não foi possível carregar o módulo de rede.'); return false; }
+      const payload = await fetchInvite({ relays: relaysList(), code }).catch(() => null);
+      if (!payload || typeof payload !== 'object') { toast('Código não encontrado ou expirado.'); return false; }
+      importGroupPayload(payload);
+    },
+  });
+  const i = $('#dlg input[name=code]');
+  if (i) { i.setAttribute('autocapitalize', 'characters'); i.setAttribute('autocomplete', 'one-time-code'); i.classList.add('mono'); }
+}
+
+function exportGroupFile(g) {
+  g.sharedAt = new Date().toISOString();
+  exportPackage('group', { ...groupPayload(g), chat: g.chat }, `ekit-grupo-${g.name.replace(/\W+/g, '_')}.json`);
+}
+
 async function importFile(file) {
   let pkg;
   try { pkg = JSON.parse(await file.text()); } catch { return toast('Ficheiro inválido.'); }
   if (pkg.app !== 'ekit') return toast('Este ficheiro não é do eKit.');
   let apply = payload => {
     if (pkg.type === 'group') {
-      const chatCfg = cleanChatCfg(payload?.chat);
-      payload = { ...cleanGroup(payload), chat: chatCfg };
-      const existing = findGroup(payload.id);
-      if (existing) {
-        mergeGroup(existing, payload);
-        if (payload.chat?.key && payload.chat.key !== existing.chat?.key) existing.chat = payload.chat;
-        toast(`Grupo "${existing.name}" atualizado.`);
-      } else {
-        S.groups.push({ ...payload, imported: true, meta: payload.meta || {}, members: payload.members || [] });
-        toast(`Grupo "${payload.name}" importado. As alterações passam a chegar sozinhas.`);
-      }
-      setTimeout(() => { S.groups.forEach(setupGroupKey); startHub(); }, 0);
-      location.hash = '#/grupos';
+      importGroupPayload(payload);
+      return;
     } else if (pkg.type === 'backup') {
       if (!confirm('Substituir TODOS os dados deste dispositivo pela cópia de segurança?')) return;
       S = cleanState({ ...payload, version: 1, alertsCache: S.alertsCache, nostr: S.nostr, chat: S.chat });
@@ -637,7 +708,7 @@ function viewGroups() {
   return `
   <div class="toolbar">
     <span class="spacer"></span>
-    <button class="btn" data-act="import">Importar</button>
+    <button class="btn" data-act="joinGroup">Entrar com código</button>
     <button class="btn primary" data-act="addGroup">+ Grupo</button>
   </div>
   ${S.groups.length ? S.groups.map(g => `
@@ -646,7 +717,7 @@ function viewGroups() {
         <h3><span class="cat-ic">${icon('users')}</span>${esc(g.name)}</h3> ${syncBadge(g)}<span class="spacer"></span>
         <a class="btn" href="#/chat/${g.id}">${icon('chat')} Chat</a>
         <button class="btn ghost" data-act="editGroup" data-id="${g.id}">Editar</button>
-        <button class="btn ghost" data-act="exportGroup" data-id="${g.id}">Partilhar</button>
+        <button class="btn ghost" data-act="shareGroup" data-id="${g.id}">Partilhar</button>
       </div>
       ${g.meetingPoint || hasCoords(g) ? `<div class="meet">${icon('pin')}<div>
         <div class="muted small">Ponto de encontro</div><strong>${esc(g.meetingPoint || 'sem nome')}</strong>
@@ -864,8 +935,8 @@ function viewSettings() {
   <section class="card">
     <h3>Cópia de segurança</h3>
     <div class="grid-buttons">
-      <button class="btn" data-act="exportBackup">⬇️ Exportar tudo</button>
-      <button class="btn" data-act="import">⬆️ Importar ficheiro</button>
+      <button class="btn" data-act="exportBackup">Exportar tudo</button>
+      <button class="btn" data-act="import">Importar ficheiro</button>
     </div>
   </section>
   <section class="card">
@@ -1118,6 +1189,11 @@ ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Cifrado entre os membros.
 const route = () => {
   const r = location.hash.slice(2);
   if (r.startsWith('chat/')) { ui.chatGroup = r.slice(5); return 'chat'; }
+  if (r.startsWith('entrar/')) {
+    const code = decodeURIComponent(r.slice(7));
+    setTimeout(() => { history.replaceState(null, '', '#/grupos'); render(); joinGroup(code); }, 0);
+    return 'grupos';
+  }
   return ROUTES[r] && r !== 'chat' ? r : 'painel';
 };
 
@@ -1258,11 +1334,8 @@ const actions = {
   editGroup: d => groupForm(findGroup(d.id)),
   addMember: d => memberForm(findGroup(d.id)),
   editMember: d => { const g = findGroup(d.id); memberForm(g, g.members.find(m => m.id === d.mid)); },
-  exportGroup: d => {
-    const g = findGroup(d.id);
-    g.sharedAt = new Date().toISOString();
-    exportPackage('group', { ...groupPayload(g), chat: g.chat }, `ekit-grupo-${g.name.replace(/\W+/g, '_')}.json`);
-  },
+  shareGroup: d => { shareGroup(findGroup(d.id)); return 'async'; },
+  joinGroup: () => { joinGroup(); return 'async'; },
   exportBackup: () => { const { alertsCache, pointsCache, nostr, chat, ...data } = S; exportPackage('backup', data, `ekit-backup-${new Date().toISOString().slice(0, 10)}.json`); },
   import: () => $('#file').click(),
   exportIcs,

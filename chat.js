@@ -144,3 +144,67 @@ export class GroupHub {
     this.sockets.clear();
   }
 }
+
+// ---------- Convites por código (partilhar um grupo sem ficheiros) ----------
+// O código (12 caracteres, ~59 bits) gera, por PBKDF2, a chave que cifra o grupo e o "endereço" do convite.
+// O convite fica nos relays como evento cifrado com prazo de 24 h (NIP-40); sem o código ninguém o encontra nem lê.
+export const INVITE_KIND = 4244;
+const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // sem 0/O, 1/I/L
+export const normalizeCode = c => String(c || '').toUpperCase().replace(/[^0-9A-Z]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+export function newInviteCode() {
+  const r = crypto.getRandomValues(new Uint8Array(12));
+  const c = [...r].map(b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+  return `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8)}`;
+}
+async function inviteKeys(code) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(normalizeCode(code)), 'PBKDF2', false, ['deriveBits']);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode('ekit-invite-v1'), iterations: 300000, hash: 'SHA-256' }, base, 512));
+  const aes = await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  return { aes, topic: hex(bits.slice(32)).slice(0, 40) };
+}
+
+function relayRound(relays, onOpen, onMsg, ms = 9000) {
+  return new Promise(resolve => {
+    const socks = [];
+    let done = false;
+    const finish = v => { if (done) return; done = true; socks.forEach(s => { try { s.close(); } catch { /* fechado */ } }); resolve(v); };
+    setTimeout(() => finish(null), ms);
+    for (const url of relays) {
+      let ws;
+      try { ws = new WebSocket(url); } catch { continue; }
+      socks.push(ws);
+      ws.onopen = () => onOpen(ws);
+      ws.onmessage = async e => { try { const v = await onMsg(JSON.parse(e.data)); if (v) finish(v); } catch { /* ignorar */ } };
+    }
+  });
+}
+
+// Publica o grupo cifrado com o código. Devolve true se pelo menos um relay o aceitou.
+export async function publishInvite({ relays, sk, code, payload, hours = 24 }) {
+  const { aes, topic } = await inviteKeys(code);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, enc.encode(JSON.stringify(payload))));
+  const exp = Math.floor(Date.now() / 1000) + hours * 3600;
+  const ev = window.NostrTools.finalizeEvent(
+    { kind: INVITE_KIND, created_at: Math.floor(Date.now() / 1000), tags: [['t', topic], ['expiration', String(exp)]], content: b64(iv) + '.' + b64(ct) },
+    unhex(sk),
+  );
+  return !!(await relayRound(relays, ws => ws.send(JSON.stringify(['EVENT', ev])), m => m[0] === 'OK' && m[1] === ev.id && m[2] === true));
+}
+
+// Procura o convite do código e devolve o grupo decifrado (ou null).
+export async function fetchInvite({ relays, code }) {
+  const { aes, topic } = await inviteKeys(code);
+  const sub = 'ekit-inv-' + Math.random().toString(36).slice(2, 8);
+  const now = Math.floor(Date.now() / 1000);
+  return relayRound(relays, ws => ws.send(JSON.stringify(['REQ', sub, { kinds: [INVITE_KIND], '#t': [topic], limit: 5 }])), async m => {
+    if (m[0] !== 'EVENT' || m[1] !== sub) return null;
+    const ev = m[2];
+    if (ev.kind !== INVITE_KIND || !ev.tags.some(t => t[0] === 't' && t[1] === topic) || !window.NostrTools.verifyEvent(ev)) return null;
+    const exp = Number(ev.tags.find(t => t[0] === 'expiration')?.[1] || 0);
+    if (exp && exp < now) return null;
+    const [iv, ct] = ev.content.split('.');
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv) }, aes, unb64(ct));
+    return JSON.parse(dec.decode(pt));
+  });
+}
