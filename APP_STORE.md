@@ -2,32 +2,32 @@
 
 O site (GitHub Pages) e a app iOS usam **o mesmo código**. A app é um invólucro nativo (Capacitor) que leva os ficheiros dentro do pacote, por isso funciona sem internet desde a instalação.
 
-## 1. O que é preciso (não se faz em Windows)
+## 1. O que é preciso
 
-- Um **Mac** com Xcode recente e Node.js 20 ou superior.
 - Conta no **Apple Developer Program** (99 €/ano). Recomendação: inscrever como **organização** (precisa de número D-U-N-S), porque a app trata dados de saúde e de emergência e transmite mais confiança.
-- Um **identificador da app** num domínio que controle. Está `io.github.deskwisesoft.ekit` em `capacitor.config.json`; troque se tiver domínio próprio (não se pode mudar depois de publicar).
+- Conta no **Codemagic**, ligada ao repositório `Deskwisesoft/ekit`. A app é compilada na cloud, por isso **não é preciso Mac**.
+- Um **identificador da app** (Bundle ID). Está `io.github.deskwisesoft.ekit` em `capacitor.config.json` e `codemagic.yaml`; troque nos dois se tiver domínio próprio (não se pode mudar depois de publicar).
 - Preencher `[nome da entidade responsável]` e `[email de contacto]` em `privacidade.html`.
 
-## 2. Gerar o projeto iOS (no Mac)
+## 2. Compilar com o Codemagic (sem Mac)
 
-```bash
-npm install
-npx cap add ios
-npm run ios
-```
+Uma vez só:
 
-`npm run ios` copia o site para `www/`, sincroniza e abre o Xcode. Depois de qualquer alteração ao site, basta `npm run sync`.
+1. **developer.apple.com → Certificates, IDs & Profiles → Identifiers → "+"**: registar o App ID `io.github.deskwisesoft.ekit` (ativar *Push Notifications* não é necessário; os lembretes são locais).
+2. **App Store Connect → Apps → "+" → Nova app**: plataforma iOS, nome "eKit – Kit de Emergência", idioma Português (Portugal), Bundle ID acima, SKU `ekit`.
+3. **App Store Connect → Utilizadores e acesso → Integrações → App Store Connect API**: gerar uma chave com função *App Manager* e descarregar o ficheiro `.p8` (só pode ser descarregado uma vez).
+4. **Codemagic → Team settings → Integrations → Developer Portal → Connect**: dar o nome **`eKit ASC`**, colar o *Issuer ID*, o *Key ID* e carregar o `.p8`. A chave fica só no Codemagic; nunca a coloque no repositório.
 
-No Xcode, em `ios/App/App/Info.plist`, acrescente:
+Em cada versão:
 
-| Chave | Valor |
-|---|---|
-| `NSLocationWhenInUseUsageDescription` | A eKit usa a sua localização só no dispositivo, para mostrar a distância aos pontos de encontro. |
-| `LSApplicationQueriesSchemes` | lista com `bitchat` |
-| `ITSAppUsesNonExemptEncryption` | ver ponto 5 |
+1. No Codemagic, abrir a app `ekit` e carregar em **Check for configuration files** (só da primeira vez).
+2. **Start new build** → workflow *eKit iOS → TestFlight* → branch `main`.
+3. A build (`codemagic.yaml`) instala o Capacitor, copia o site para `www/`, gera o projeto iOS, aplica o ícone e as permissões (localização, bitchat), assina automaticamente e envia para o **TestFlight**.
+4. No iPhone, abrir a app **TestFlight** e instalar a eKit para testar.
 
-Ícone: arraste `icons/icon-1024.png` para *AppIcon* em `Assets.xcassets`.
+Para mudar a versão visível (ex.: 1.1.0), altere `APP_VERSION` em `codemagic.yaml`. O número de build aumenta sozinho.
+
+Se uma build falhar, os registos ficam em *Artifacts* (`xcodebuild_logs`).
 
 ## 3. Testar num iPhone real antes de submeter
 
@@ -70,4 +70,4 @@ A app usa cifra padrão (AES-GCM, SHA-256, assinaturas Schnorr) para proteger os
 
 ## 8. Manter o site
 
-Nada muda: cada `git push` para `main` atualiza o GitHub Pages. Para a app, `npm run sync` no Mac e nova versão no Xcode (aumente *Version/Build*).
+Nada muda: cada `git push` para `main` atualiza o GitHub Pages. Para a app, inicie uma nova build no Codemagic depois do push.

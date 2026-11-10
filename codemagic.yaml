@@ -1,0 +1,79 @@
+# Codemagic: compila a app iOS da eKit na cloud (sem Mac) e envia-a para o TestFlight.
+# O site continua no GitHub Pages; esta build usa exatamente os mesmos ficheiros.
+#
+# Antes da primeira build (uma vez):
+#  1. App Store Connect > Utilizadores e acesso > Integrações > App Store Connect API: criar chave (função "App Manager").
+#  2. Codemagic > Team settings > Integrations > Developer Portal: adicionar essa chave com o nome "eKit ASC"
+#     (ou mudar o nome em integrations.app_store_connect abaixo).
+#  3. App Store Connect > Apps > "+": criar a app com o Bundle ID abaixo (registá-lo antes em developer.apple.com > Identifiers).
+#
+# A build é iniciada à mão no Codemagic (botão "Start new build"), para não gastar minutos em cada push.
+
+workflows:
+  ios-testflight:
+    name: eKit iOS → TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: eKit ASC
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: io.github.deskwisesoft.ekit
+      vars:
+        APP_VERSION: "1.0.0"
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Instalar dependências
+        script: npm install --no-audit --no-fund
+
+      - name: Preparar ficheiros da app (www/)
+        script: npm run build
+
+      - name: Criar e sincronizar o projeto iOS
+        script: |
+          if [ ! -d ios ]; then npx cap add ios; fi
+          npx cap sync ios
+
+      - name: Ícone, permissões e versão
+        script: |
+          set -e
+          PLIST=ios/App/App/Info.plist
+          ICONSET=ios/App/App/Assets.xcassets/AppIcon.appiconset
+          # Ícone 1024 px (o modelo do Capacitor usa um único ficheiro)
+          ICON=$(ls "$ICONSET"/*.png | head -1)
+          cp icons/icon-1024.png "$ICON"
+          # Localização: só usada no dispositivo
+          /usr/libexec/PlistBuddy -c "Delete :NSLocationWhenInUseUsageDescription" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSLocationWhenInUseUsageDescription string A eKit usa a sua localização só no dispositivo, para mostrar a distância aos pontos de encontro." "$PLIST"
+          # Permitir abrir o bitchat
+          /usr/libexec/PlistBuddy -c "Delete :LSApplicationQueriesSchemes" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :LSApplicationQueriesSchemes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :LSApplicationQueriesSchemes:0 string bitchat" "$PLIST"
+          # Nome visível no ecrã principal
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName eKit" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string eKit" "$PLIST"
+          # Versão (APP_VERSION) e número de build (contador do Codemagic)
+          cd ios/App
+          agvtool new-marketing-version "$APP_VERSION"
+          agvtool new-version -all "$BUILD_NUMBER"
+
+      - name: Assinatura automática
+        script: xcode-project use-profiles
+
+      - name: Compilar .ipa
+        script: |
+          if [ -d ios/App/App.xcworkspace ]; then
+            xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
+          else
+            xcode-project build-ipa --project ios/App/App.xcodeproj --scheme App
+          fi
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
