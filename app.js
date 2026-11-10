@@ -1,6 +1,6 @@
 import {
   CATEGORIES, DEFAULT_KIT, EMERGENCY_NUMBERS, DEFAULT_LISTS, GUIDES,
-  IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL, DISTRICT_CAPITALS, OVERPASS_URLS,
+  IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL, DISTRICT_CAPITALS, OVERPASS_URLS, SEISMIC_URL,
 } from './data.js';
 import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS, publishInvite, fetchInvite, newInviteCode, normalizeCode } from './chat.js';
 const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
@@ -24,8 +24,9 @@ function seed() {
 // Os dados são normalizados à entrada: textos limitados, números verificados, coordenadas dentro dos limites,
 // só os campos conhecidos. Assim nada vindo de outro membro do grupo ou de um ficheiro chega ao HTML sem controlo.
 const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes'];
-const MEMBER_FIELDS = ['name', 'phone', 'role', 'bitchat', 'needs', 'consentAt'];
-const NAV_KEYS = ['painel', 'kit', 'mapa', 'alertas', 'contactos', 'grupos', 'listas', 'guia', 'definicoes', 'sobre'];
+const MEMBER_FIELDS = ['name', 'phone', 'role', 'bitchat', 'needs', 'allergies', 'meds', 'blood', 'consentAt'];
+const HEALTH_FIELDS = ['needs', 'allergies', 'meds', 'blood'];
+const NAV_KEYS = ['painel', 'kit', 'mapa', 'alertas', 'contactos', 'grupos', 'guia', 'definicoes'];
 const arr = v => (Array.isArray(v) ? v : []);
 const str = (v, max = 500) => (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, max);
 const num = (v, d = 0) => (v !== '' && v != null && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -37,10 +38,10 @@ const idOf = v => (typeof v === 'string' && v && v.length <= 80 ? v : uid());
 function cleanMember(m) {
   const o = { id: idOf(m?.id), updatedAt: clampTs(m?.updatedAt) };
   if (m?.deleted) { o.deleted = true; return o; }
-  for (const k of MEMBER_FIELDS) o[k] = str(m?.[k], k === 'needs' ? 1000 : 200);
+  for (const k of MEMBER_FIELDS) o[k] = str(m?.[k], ['needs', 'allergies', 'meds'].includes(k) ? 1000 : k === 'blood' ? 10 : 200);
   o.consent = !!m?.consent;
   o.pk = /^[0-9a-f]{64}$/.test(m?.pk) ? m.pk : '';
-  if (o.needs && !o.consent) o.needs = '';
+  if (!o.consent) for (const k of HEALTH_FIELDS) o[k] = '';
   return o;
 }
 const PET_FIELDS = { name: 80, species: 40, breed: 80, chip: 30, registry: 60, vet: 120, vetPhone: 30, needs: 1000, notes: 1000 };
@@ -82,6 +83,12 @@ function cleanPoint(p) {
     cap: Number.isFinite(Number(p?.cap)) && p?.cap !== null ? Math.round(Number(p.cap)) : null, t: str(p?.t, 30) };
   return o.lat === '' || o.lng === '' ? null : o;
 }
+function cleanQuake(q) {
+  const lat = Number(q?.lat), lng = Number(q?.lng ?? q?.lon), mag = Number(q?.mag ?? q?.magnitud);
+  const t = typeof q?.t === 'string' ? q.t : typeof q?.time === 'string' ? q.time : '';
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(mag) || mag < 0 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) return null;
+  return { t: t.slice(0, 19), lat, lng, mag, reg: str(q?.reg ?? q?.obsRegion, 80).replace(/\s+/g, ' ').trim(), sensed: !!q?.sensed };
+}
 function cleanService(x) {
   const lat = Number(x?.lat), lng = Number(x?.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
@@ -103,6 +110,7 @@ function cleanState(s) {
     blocked: arr(st.blocked).filter(k => /^[0-9a-f]{64}$/.test(k)),
     chatNotify: st.chatNotify !== false, chatPreview: st.chatPreview !== false,
     autoDistrict: st.autoDistrict !== false,
+    radio: str(st.radio, 60), lastBackup: num(st.lastBackup), mapSaved: num(st.mapSaved), mapSavedN: num(st.mapSavedN),
   };
   out.kit = Array.isArray(s.kit) ? s.kit.map(i => ({
     id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
@@ -111,6 +119,10 @@ function cleanState(s) {
   })) : base.kit;
   out.contacts = arr(s.contacts).map(c => ({ id: idOf(c?.id), name: str(c?.name, 120), phone: str(c?.phone, 30), relation: str(c?.relation, 120), notes: str(c?.notes, 1000), priority: !!c?.priority }));
   out.lists = Array.isArray(s.lists) ? s.lists.map(l => ({ id: idOf(l?.id), name: str(l?.name, 120), items: arr(l?.items).map(i => ({ id: idOf(i?.id), text: str(i?.text, 300), done: !!i?.done })) })) : base.lists;
+  // Listas novas (documentos, vizinhos) chegam uma vez a quem já usava a app.
+  if (num(s.listsV, 1) < 2) for (const l of base.lists) if (!out.lists.some(x => x.name === l.name)) out.lists.push(l);
+  out.listsV = 2;
+  out.quakes = s.quakes && Array.isArray(s.quakes.data) ? { at: num(s.quakes.at), area: num(s.quakes.area), data: s.quakes.data.map(cleanQuake).filter(Boolean).slice(0, 400) } : undefined;
   out.groups = arr(s.groups).filter(g => g && typeof g.id === 'string').map(g => ({
     ...cleanGroup(g), chat: cleanChatCfg(g.chat), syncPending: !!g.syncPending, syncRev: num(g.syncRev), sharedAt: str(g.sharedAt, 40), imported: !!g.imported, selfAdded: !!g.selfAdded,
   }));
@@ -544,7 +556,37 @@ async function checkExpiryNotification() {
 }
 
 // ---------- Alertas (IPMA) ----------
+// Sismos: os últimos 30 dias do IPMA, para a área da sua zona. Hora em UTC (como publica o IPMA).
+const quakeArea = () => (['AOR', 'ACE', 'AOC'].includes(S.settings.district) ? 3 : 7);
+const quakeTs = q => Date.parse(q.t + 'Z');
+async function fetchQuakes() {
+  const area = quakeArea();
+  try {
+    const d = await (await fetch(SEISMIC_URL(area), { cache: 'no-store' })).json();
+    S.quakes = { at: Date.now(), area, data: arr(d?.data).map(cleanQuake).filter(Boolean) };
+    save();
+  } catch { /* sem rede: fica a última cópia */ }
+}
+function recentQuakes(days = 7) {
+  const pos = myPos(), since = Date.now() - days * 864e5;
+  return (S.quakes?.area === quakeArea() ? S.quakes.data : [])
+    .filter(q => quakeTs(q) >= since && (q.mag >= 2.5 || q.sensed))
+    .map(q => ({ ...q, d: pos ? distanceKm(pos, q) : null }))
+    .filter(q => q.d == null || q.d <= 400)
+    .sort((a, b) => quakeTs(b) - quakeTs(a));
+}
+// Sismo forte nas últimas 24 h perto de si: aparece no Painel.
+const strongQuake = () => recentQuakes(1).find(q => q.mag >= 4 && (q.d == null || q.d <= 300));
+const quakeWhen = q => new Date(quakeTs(q)).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+function quakeBanner(q) {
+  return `<a class="alert-banner ${q.mag >= 5 ? 'bad' : 'orange'}" href="#/emergencia">${icon('quake')}
+    <div><strong>Sismo de magnitude ${q.mag.toFixed(1).replace('.', ',')}</strong>
+      <span>${esc(q.reg)} · ${esc(quakeWhen(q))}${q.d != null ? ' · a ' + fmtDist(q.d) : ''} · O que fazer</span></div>
+    <span class="chev" aria-hidden="true">›</span></a>`;
+}
+
 async function fetchAlerts() {
+  fetchQuakes();
   ui.alertsLoading = true; render();
   try {
     const r = await fetch(IPMA_WARNINGS_URL, { cache: 'no-store' });
@@ -629,7 +671,7 @@ const ICONS = {
   star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
 };
 const CAT_ICONS = { agua: 'drop', saude: 'health', energia: 'bolt', docs: 'doc', abrigo: 'tool', outros: 'box' };
-const GUIDE_ICONS = { sismo: 'quake', inundacao: 'wave', incendio: 'flame', apagao: 'bolt', calor: 'sun', abrigo: 'home', evacuacao: 'route' };
+const GUIDE_ICONS = { sismo: 'quake', inundacao: 'wave', tsunami: 'wave', incendio: 'flame', apagao: 'bolt', calor: 'sun', abrigo: 'home', evacuacao: 'route', telemovel: 'phone' };
 const catIcon = id => `<span class="cat-ic">${icon(CAT_ICONS[id] || 'box')}</span>`;
 const icon = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -736,7 +778,10 @@ function viewDashboard() {
           <strong>${esc(near.p.n)}</strong> <span class="muted small">${esc(near.p.m)}${near.p.t === 'Tsunami' ? ' · tsunami' : ''}</span>
           ${navLinks(near.p, near.p.n)}</div></div>`
       : '<p class="muted small">Ainda não há pontos oficiais publicados perto de si. Combine um ponto com a família em Grupos.</p>';
+  const qk = strongQuake();
   return `
+  <a class="sos-entry" href="#/emergencia">${icon('alert')} Modo emergência</a>
+  ${qk ? quakeBanner(qk) : ''}
   ${top ? alertBanner(top, others.length) : ''}
   ${st.pct < 100 ? kitCard : ''}
 
@@ -760,13 +805,19 @@ function viewDashboard() {
     <a href="#/alertas">Ver todos os alertas →</a>
   </section>
 
-  <section class="card">
+  ${st.exp.length ? `<section class="card">
     <h3>Próximas validades</h3>
     ${st.exp.length ? `<ul class="list">${st.exp.slice(0, 5).map(({ i, e }) => `
       <li class="row"><div class="row-main" data-act="editItem" data-id="${i.id}">
         <div class="row-title">${esc(i.name)}</div><div class="row-sub"><span class="badge ${e.cls}">${esc(e.label)}</span></div>
-      </div></li>`).join('')}</ul>` : '<p class="muted">Nada a expirar nos próximos ' + S.settings.notifyDays + ' dias.</p>'}
-  </section>`;
+      </div></li>`).join('')}</ul>` : ''}
+  </section>` : ''}
+  ${backupNote()}`;
+}
+function backupNote() {
+  const has = S.groups.length || S.contacts.length || S.kit.some(i => i.have > 0);
+  if (!has || (S.settings.lastBackup && Date.now() - S.settings.lastBackup < 90 * 864e5)) return '';
+  return `<p class="note small">${S.settings.lastBackup ? 'A última cópia de segurança tem mais de 3 meses.' : 'Ainda não fez cópia de segurança. Se perder o telemóvel, perde o plano.'} <a href="#/definicoes">Exportar →</a></p>`;
 }
 
 function viewKit() {
@@ -877,6 +928,7 @@ function contactForm(c) {
 function viewGroups() {
   return `
   <div class="toolbar">
+    <a class="btn ghost" href="#/cartao">Cartão para imprimir</a>
     <span class="spacer"></span>
     <button class="btn" data-act="joinGroup">Entrar com código</button>
     <button class="btn primary" data-act="addGroup">+ Grupo</button>
@@ -1055,12 +1107,15 @@ function memberForm(g, m) {
       { k: 'phone', label: 'Telefone', type: 'tel' },
       { k: 'role', label: 'Papel (ex.: responsável, criança)' },
       { k: 'bitchat', label: 'Nome no bitchat (para mensagens privadas sem internet)' },
-      { k: 'needs', label: 'Necessidades especiais (mobilidade, medicação…)', type: 'textarea' },
-      { type: 'info', html: 'Dados de saúde: só com consentimento da pessoa.' },
+      { type: 'info', html: 'Dados de saúde: só com consentimento da pessoa. Ajudam quem socorre.' },
+      { k: 'needs', label: 'Necessidades especiais (mobilidade, equipamentos…)', type: 'textarea' },
+      { k: 'meds', label: 'Medicação habitual' },
+      { k: 'allergies', label: 'Alergias' },
+      { k: 'blood', label: 'Grupo sanguíneo (ex.: A+)' },
       { k: 'consent', label: 'A pessoa consentiu partilhar estes dados com o grupo', type: 'checkbox' },
     ],
     onSave(v) {
-      if (v.needs && !v.consent) { toast('Para guardar necessidades especiais é preciso o consentimento.'); return false; }
+      if (HEALTH_FIELDS.some(k => v[k]) && !v.consent) { toast('Para guardar dados de saúde é preciso o consentimento.'); return false; }
       v.consentAt = v.consent ? (m?.consentAt || new Date().toISOString()) : '';
       v.updatedAt = Date.now();
       if (m) Object.assign(m, v); else g.members.push({ id: uid(), ...v });
@@ -1095,7 +1150,8 @@ function viewGuide() {
     <details class="card guide"><summary>${icon(GUIDE_ICONS[g.id] || 'alert')} ${esc(g.title)}</summary>
       <ol>${g.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
     </details>`).join('') +
-    '<p class="muted small">Siga sempre as indicações das autoridades.</p>';
+    '<p class="muted small">Siga sempre as indicações das autoridades.</p>' +
+    '<h2 class="sec-h">Listas de verificação</h2>' + viewLists();
 }
 
 function viewAlerts() {
@@ -1111,6 +1167,14 @@ function viewAlerts() {
     ${ui.alertsError ? `<p class="badge warn block">${esc(ui.alertsError)}</p>` : ''}
     <p class="muted small">${at ? 'Última atualização: ' + new Date(at).toLocaleString('pt-PT') : 'Ainda sem dados. Carregue em Atualizar com ligação à internet.'} · Fonte: IPMA</p>
     ${alerts.length ? `<ul class="list">${alerts.map(alertCard).join('')}</ul>` : '<p class="empty">Sem avisos meteorológicos ativos para esta zona.</p>'}
+  </section>
+  <section class="card">
+    <h3>Sismos recentes</h3>
+    ${(() => { const qs = recentQuakes(7); return qs.length ? `<ul class="list">${qs.slice(0, 8).map(q => `<li class="row"><div class="row-main">
+      <div class="row-title">Magnitude ${q.mag.toFixed(1).replace('.', ',')} <span class="badge ${q.mag >= 4 ? 'bad' : q.mag >= 3 ? 'warn' : ''}">${esc(q.reg)}</span>${q.sensed ? ' <span class="badge">sentido</span>' : ''}</div>
+      <div class="row-sub">${esc(quakeWhen(q))}${q.d != null ? ' · a ' + fmtDist(q.d) + ' de si' : ''}</div></div></li>`).join('')}</ul>`
+      : '<p class="muted small">Sem sismos de magnitude 2,5 ou superior nos últimos 7 dias' + (myPos() ? ' perto de si' : '') + '.</p>'; })()}
+    <p class="muted small">Fonte: IPMA (dados preliminares). Sismo forte? <a href="#/emergencia">Modo emergência →</a></p>
   </section>
   <section class="card">
     <h3>Fontes oficiais</h3>
@@ -1135,6 +1199,14 @@ function viewMap() {
     <div id="map" class="map"></div>
   </section>
   <section class="card">
+    <h3>Mapa sem internet</h3>
+    ${native() ? '<p class="muted small">Na app, o mapa guarda as zonas que vai vendo. Para guardar uma zona inteira, use o site no navegador.</p>' : `
+    <p class="muted small">Guarda o mapa à volta da sua posição e dos pontos de encontro dos grupos, para ver sem rede.</p>
+    <div class="progress" ${ui.tilesTotal ? '' : 'hidden'}><i id="tiles-bar"></i></div>
+    <p class="small" id="tiles-msg">${S.settings.mapSaved ? `Zona guardada em ${new Date(S.settings.mapSaved).toLocaleDateString('pt-PT')} (${S.settings.mapSavedN} partes).` : ''}</p>
+    <button class="btn" data-act="saveMap" ${ui.tilesTotal ? 'disabled' : ''}>${icon('map')} ${S.settings.mapSaved ? 'Atualizar mapa guardado' : 'Guardar mapa da minha zona'}</button>`}
+  </section>
+  <section class="card">
     <h3>Procurar pontos oficiais</h3>
     <input type="search" id="pt-search" value="${esc(ui.ptQuery || '')}" placeholder="Nome, freguesia ou concelho" aria-label="Procurar pontos de encontro oficiais" autocomplete="off">
     <ul class="list" id="pt-results">${pointResults()}</ul>
@@ -1156,6 +1228,50 @@ function viewMap() {
     <p class="muted small">${POINTS.length} pontos, disponíveis offline.${at ? ' Lisboa atualizada em ' + new Date(at).toLocaleString('pt-PT') + '.' : ''}</p>
     <button class="btn" data-act="refreshLisboa" ${ui.pointsLoading ? 'disabled' : ''}>${ui.pointsLoading ? 'A atualizar…' : 'Atualizar pontos de Lisboa'}</button>
   </section>`;
+}
+
+// Mosaicos à volta de cada sítio importante, do nível 12 (cidade) ao 16 (ruas). Limite modesto
+// para respeitar o OpenStreetMap: só a zona de cada ponto, a pedido do utilizador.
+function tilesAround(places) {
+  const set = new Set();
+  const tile = (lat, lng, z) => {
+    const n = 2 ** z, x = Math.floor(((lng + 180) / 360) * n);
+    const r = (lat * Math.PI) / 180, y = Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
+    return [x, y];
+  };
+  for (const p of places) for (let z = 12; z <= 16; z++) {
+    const span = z <= 13 ? 0 : z === 14 ? 1 : z === 15 ? 2 : 3;
+    const [x, y] = tile(p.lat, p.lng, z);
+    for (let dx = -span; dx <= span; dx++) for (let dy = -span; dy <= span; dy++) set.add(`${z}/${x + dx}/${y + dy}`);
+  }
+  return [...set].slice(0, 600);
+}
+async function saveMapArea() {
+  const pos = myPos();
+  const places = [pos, ...S.groups.filter(hasCoords), ...S.groups.flatMap(g => livePoints(g).filter(hasCoords))].filter(Boolean);
+  if (!places.length) return toast('Use "Onde estou" ou defina um ponto de encontro primeiro.');
+  if (!navigator.onLine) return toast('Precisa de internet para guardar o mapa.');
+  if (!navigator.serviceWorker?.controller) return toast('Recarregue a página e tente de novo.');
+  const list = tilesAround(places);
+  ui.tilesTotal = list.length; render();
+  let done = 0, ok = 0;
+  const step = () => {
+    const bar = $('#tiles-bar'), msg = $('#tiles-msg');
+    if (bar) bar.style.width = Math.round((done / list.length) * 100) + '%';
+    if (msg) msg.textContent = `A guardar… ${done} de ${list.length}`;
+  };
+  const load = t => new Promise(res => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { ok++; res(); };
+    img.onerror = () => res();
+    img.src = `https://tile.openstreetmap.org/${t}.png?keep`;
+  });
+  const queue = [...list];
+  await Promise.all(Array.from({ length: 2 }, async () => { while (queue.length) { await load(queue.shift()); done++; step(); } }));
+  S.settings.mapSaved = Date.now(); S.settings.mapSavedN = ok; ui.tilesTotal = 0;
+  save(); render();
+  toast(ok ? `Mapa guardado (${ok} partes). Funciona sem internet.` : 'Não foi possível guardar o mapa.');
 }
 
 function pointResults() {
@@ -1253,6 +1369,12 @@ function viewSettings() {
     <p class="muted small">Com a app fechada, use o calendário.</p>
   </section>
   <section class="card form">
+    <h3>Rádio</h3>
+    <label for="radio">Frequência da Antena 1 ou da rádio local na sua zona</label>
+    <input id="radio" data-change="radio" value="${esc(S.settings.radio)}" placeholder="ex.: Antena 1 · 95.7 FM" maxlength="60">
+    <p class="muted small">Num apagão a informação oficial chega pela rádio. Confirme a frequência agora num rádio a pilhas.</p>
+  </section>
+  <section class="card form">
     <h3>Localização</h3>
     <label class="check"><input type="checkbox" data-change="autoDistrict" ${S.settings.autoDistrict ? 'checked' : ''}> Escolher a zona dos avisos pela localização</label>
     <p class="muted small">A posição fica neste dispositivo. ${S.lastPos ? `<button class="linkbtn" data-act="forgetPos">Esquecer a última posição</button>` : ''}</p>
@@ -1261,13 +1383,16 @@ function viewSettings() {
     <h3>Chat dos grupos</h3>
     <label class="check"><input type="checkbox" data-change="chatNotify" ${S.settings.chatNotify ? 'checked' : ''}> Notificar mensagens novas</label>
     <label class="check"><input type="checkbox" data-change="chatPreview" ${S.settings.chatPreview ? 'checked' : ''}> Mostrar o texto na notificação</label>
-    <label for="relays">Relays Nostr (um por linha; vazio = predefinidos)</label>
-    <textarea id="relays" rows="3" data-change="relays" placeholder="${DEFAULT_RELAYS.join('\n')}">${esc((S.settings.relays || []).join('\n'))}</textarea>
-    <p class="muted small">Os relays só recebem texto cifrado.</p>
+    <details class="adv"><summary>Opções avançadas</summary>
+      <label for="relays">Relays Nostr (um por linha; vazio = predefinidos)</label>
+      <textarea id="relays" rows="3" data-change="relays" placeholder="${DEFAULT_RELAYS.join('\n')}">${esc((S.settings.relays || []).join('\n'))}</textarea>
+      <p class="muted small">Os relays só recebem texto cifrado.</p>
+    </details>
     ${S.settings.blocked?.length ? `<p class="small">${S.settings.blocked.length} remetente(s) bloqueado(s). <button class="linkbtn" data-act="unblockAll">Desbloquear todos</button></p>` : ''}
   </section>
   <section class="card">
     <h3>Cópia de segurança</h3>
+    <p class="muted small">${S.settings.lastBackup ? 'Última cópia: ' + new Date(S.settings.lastBackup).toLocaleDateString('pt-PT') + '.' : 'Ainda não fez nenhuma cópia.'} Guarde-a fora do telemóvel (email, computador).</p>
     <div class="grid-buttons">
       <button class="btn" data-act="exportBackup">Exportar tudo</button>
       <button class="btn" data-act="import">Importar ficheiro</button>
@@ -1492,10 +1617,16 @@ async function sendChat(form) {
   if (!S.settings.myName) return askName(() => sendChat(form));
   const g = findGroup(form.dataset.chat);
   if (!hub || !g?.chat) { startHub(); return toast('O chat ainda está a carregar. Tente de novo.'); }
-  const ev = await hub.buildChat(g.chat, S.settings.myName, text);
   input.value = '';
+  await postToGroup(g, text);
+}
+// Fica em fila se não houver rede e segue quando a ligação voltar.
+async function postToGroup(g, text) {
+  if (!hub || !g?.chat || !S.settings.myName) return false;
+  const ev = await hub.buildChat(g.chat, S.settings.myName, text);
   addMsg(g.id, { id: ev.id, pk: ev.pubkey, name: S.settings.myName, text, ts: Date.now(), status: 'pending', ev });
   hub.publish(ev);
+  return true;
 }
 
 function askName(then) {
@@ -1563,13 +1694,14 @@ const ROUTES = {
   alertas: ['Avisos', 'alert', viewAlerts, 1, 'IPMA, para a sua zona.'],
   contactos: ['Contactos', 'phone', viewContacts, 0, 'Emergência e pessoais'],
   grupos: ['Grupos', 'users', viewGroups, 0, 'Família, vizinhos, pontos de encontro'],
-  listas: ['Listas', 'list', viewLists, 0, 'Evacuação e revisão do kit'],
-  guia: ['Guia', 'book', viewGuide, 0, 'O que fazer em cada situação'],
+  guia: ['O que fazer', 'book', viewGuide, 0, 'Guias para cada situação e listas de verificação'],
   definicoes: ['Definições', 'settings', viewSettings, 0, 'Agregado, lembretes, dados'],
   sobre: ['Sobre e princípios', 'shield', viewAbout, 0, 'Missão, princípios, privacidade'],
   mais: ['Mais', 'more', viewMore, 2, ''],
 };
 ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Cifrado entre os membros.'];
+ROUTES.emergencia = ['Modo emergência', 'alert', viewEmergency, -1, 'O essencial, em poucos toques.'];
+ROUTES.cartao = ['Cartão da família', 'users', viewCard, -1, 'Para imprimir e guardar no kit e na carteira.'];
 const route = () => {
   const r = location.hash.slice(2);
   if (r.startsWith('chat/')) { ui.chatGroup = r.slice(5); return 'chat'; }
@@ -1578,10 +1710,11 @@ const route = () => {
     setTimeout(() => { history.replaceState(null, '', '#/grupos'); render(); joinGroup(code); }, 0);
     return 'grupos';
   }
+  if (r === 'listas') return 'guia';
   return ROUTES[r] && r !== 'chat' ? r : 'painel';
 };
 
-const NAV_SHORT = { kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre' };
+const NAV_SHORT = { kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre', guia: 'O que fazer', emergencia: 'Emergência', cartao: 'Cartão' };
 
 function pageHead(r, title) {
   if (r === 'painel') {
@@ -1648,8 +1781,130 @@ function moveNav(k, delta) {
   S.settings.navOrder = o;
 }
 
+// ---------- Modo emergência ----------
+// Pensado para stress e pouca bateria: fundo escuro, botões grandes, só o essencial.
+const allMembers = () => S.groups.flatMap(g => liveMembers(g).map(m => ({ ...m, g })));
+function statusRecipients() {
+  const me = myPub(), seen = new Set();
+  return allMembers().filter(m => m.phone && !(me && m.pk === me)).map(m => m.phone.replace(/[^\d+]/g, '')).filter(p => p && !seen.has(p) && seen.add(p));
+}
+function smsHref(nums, body) {
+  const b = encodeURIComponent(body);
+  return /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document
+    ? `sms:/open?addresses=${nums.join(',')}&body=${b}` : `sms:${nums.join(',')}?body=${b}`;
+}
+function statusText(help) {
+  const pos = myPos(), g = S.groups.find(x => x.meetingPoint || hasCoords(x));
+  const time = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+  return [
+    `eKit: ${help ? 'PRECISO DE AJUDA' : 'Estou bem'}${S.settings.myName ? ' (' + S.settings.myName + ')' : ''}. ${time}.`,
+    pos ? `Estou em ${pos.lat.toFixed(5)},${pos.lng.toFixed(5)} https://www.openstreetmap.org/?mlat=${pos.lat.toFixed(5)}&mlon=${pos.lng.toFixed(5)}#map=17/${pos.lat.toFixed(5)}/${pos.lng.toFixed(5)}` : '',
+    g ? `Ponto de encontro: ${g.meetingPoint || fmtCoords(g)}.` : '',
+  ].filter(Boolean).join(' ');
+}
+function sendStatus(help) {
+  const text = statusText(help), nums = statusRecipients();
+  // Também no chat dos grupos: chega por internet quando houver, e fica em fila sem rede.
+  S.groups.filter(g => g.chat).forEach(g => postToGroup(g, text));
+  if (!ui.pos) locate(() => render()); // a próxima mensagem já leva a posição atual
+  if (nums.length) { location.href = smsHref(nums, text); return; }
+  if (navigator.share) navigator.share({ text }).catch(() => {});
+  else { navigator.clipboard?.writeText(text); toast('Sem telefones no grupo. Mensagem copiada.'); }
+}
+function viewEmergency() {
+  const pos = myPos(), nums = statusRecipients();
+  const meet = S.groups.filter(g => g.meetingPoint || hasCoords(g));
+  const alts = S.groups.flatMap(g => livePoints(g).map(x => ({ ...x, g })));
+  const near = pos && POINTS.length ? nearestOfficial(pos) : null;
+  const tsu = pos ? POINTS.filter(p => p.t === 'Tsunami').map(p => ({ p, d: distanceKm(pos, p) })).sort((a, b) => a.d - b.d)[0] : null;
+  const health = allMembers().filter(m => m.consent && HEALTH_FIELDS.some(k => m[k]));
+  const calls = [
+    ...allMembers().filter(m => m.phone && !(m.pk && m.pk === myPub())).map(m => [m.name, m.phone]),
+    ...S.contacts.filter(c => c.priority && c.phone).map(c => [c.name, c.phone]),
+    ...['fire', 'police'].flatMap(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => [s.n, s.phone])),
+  ].slice(0, 10);
+  const qk = strongQuake();
+  return `
+  <a class="btn call big" href="tel:112">${icon('phone')} Ligar 112</a>
+  ${qk ? quakeBanner(qk) : ''}
+  <section class="card">
+    <h3>Avisar a família</h3>
+    <div class="status-btns">
+      <button class="btn ok" data-act="status" data-v="ok">✓ Estou bem</button>
+      <button class="btn help" data-act="status" data-v="help">! Preciso de ajuda</button>
+    </div>
+    <p class="muted small">${nums.length ? `Abre as SMS para ${nums.length} pessoa(s) com ${pos ? 'a sua posição' : 'o ponto de encontro'}.` : 'Adicione telefones às pessoas do grupo para enviar por SMS.'}
+      As SMS costumam funcionar quando a internet falha.</p>
+  </section>
+  <section class="card">
+    <h3>Para onde ir</h3>
+    ${meet.map(g => `<div class="meet">${icon('pin')}<div class="meet-body"><div class="muted small">Ponto de encontro · ${esc(g.name)}</div>
+      <strong>${esc(g.meetingPoint || fmtCoords(g))}</strong>${hasCoords(g) ? navLinks(g, g.meetingPoint) : ''}</div></div>`).join('')}
+    ${alts.map(x => `<div class="meet alt">${icon('pin')}<div class="meet-body"><div class="muted small">${esc(MEET_KINDS[x.kind])}${x.notes ? ' · ' + esc(x.notes) : ''}</div>
+      <strong>${esc(x.name)}</strong>${hasCoords(x) ? navLinks(x, x.name) : ''}</div></div>`).join('')}
+    ${near && near.d <= 25 ? `<div class="meet near">${icon('pin')}<div class="meet-body"><div class="muted small">Ponto oficial mais próximo · ${fmtDist(near.d)} para ${bearing(pos, near.p)}</div>
+      <strong>${esc(near.p.n)}</strong>${navLinks(near.p, near.p.n)}</div></div>` : ''}
+    ${tsu && tsu.d <= 5 ? `<p class="note small"><strong>Está perto da costa.</strong> Depois de um sismo forte, afaste-se do mar a pé e suba: ponto de tsunami mais próximo a ${fmtDist(tsu.d)} (${esc(tsu.p.n)}).</p>` : ''}
+    ${!meet.length && !alts.length && !(near && near.d <= 25) ? `<p class="muted">Sem ponto definido. <button class="btn sm" data-act="useLocation">${icon('pin')} Ver o ponto oficial mais próximo</button></p>` : ''}
+  </section>
+  <section class="card">
+    <h3>O que está a acontecer?</h3>
+    ${GUIDES.filter(g => g.id !== 'telemovel').map(g => `<details class="guide"><summary>${icon(GUIDE_ICONS[g.id] || 'alert')} ${esc(g.title)}</summary>
+      <ol>${g.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol></details>`).join('')}
+  </section>
+  ${calls.length ? `<section class="card"><h3>Ligar</h3><ul class="list">${calls.map(([n, p]) => `<li class="row"><div class="row-main"><div class="row-title">${esc(n)}</div></div>
+    <a class="btn" href="${telHref(p)}" aria-label="Ligar a ${esc(n)}">${icon('phone')} ${esc(p)}</a></li>`).join('')}</ul></section>` : ''}
+  ${health.length ? `<section class="card"><h3>Saúde (para quem socorre)</h3><ul class="list">${health.map(m => `<li class="row"><div class="row-main">
+    <div class="row-title">${esc(m.name)}${m.blood ? ` <span class="badge">${esc(m.blood)}</span>` : ''}</div>
+    <div class="row-sub">${esc([m.allergies && 'Alergias: ' + m.allergies, m.meds && 'Medicação: ' + m.meds, m.needs].filter(Boolean).join(' · '))}</div></div></li>`).join('')}</ul></section>` : ''}
+  <section class="card">
+    <h3>Rádio e bateria</h3>
+    <p>${S.settings.radio ? `${icon('bolt')} <strong>${esc(S.settings.radio)}</strong>` : 'Ligue a Antena 1 ou a rádio local num rádio a pilhas. <a href="#/definicoes">Guardar a frequência →</a>'}</p>
+    <ul class="tips small">
+      <li>Ative o modo de poupança de energia e baixe o brilho.</li>
+      <li>Prefira SMS a chamadas; chamadas curtas.</li>
+      <li>Desligue dados e Bluetooth quando não precisar; ligue de vez em quando para ver mensagens.</li>
+    </ul>
+  </section>
+  <p class="crisis-exit"><a href="#/painel">Sair do modo emergência</a></p>`;
+}
+
+// ---------- Cartão da família (para imprimir) ----------
+function viewCard() {
+  const rows = (a) => a.filter(Boolean).join('');
+  return `
+  <div class="toolbar no-print"><span class="spacer"></span>
+    <button class="btn primary" data-act="print">Imprimir</button></div>
+  <section class="card family-card">
+    <h2>Em emergência: 112</h2>
+    <p class="small">Ponto de encontro e contactos da família · atualizado em ${new Date().toLocaleDateString('pt-PT')}</p>
+    ${S.settings.radio ? `<p class="small"><strong>Rádio:</strong> ${esc(S.settings.radio)}</p>` : ''}
+  </section>
+  ${S.groups.map(g => `<section class="card family-card">
+    <h3>${esc(g.name)}</h3>
+    <table>
+      ${g.meetingPoint || hasCoords(g) ? `<tr><th>Ponto de encontro</th><td>${esc(g.meetingPoint || '')}${hasCoords(g) ? `<br><span class="mono">${fmtCoords(g)}</span>` : ''}</td></tr>` : ''}
+      ${rows(livePoints(g).map(x => `<tr><th>${esc(MEET_KINDS[x.kind])}</th><td>${esc(x.name)}${x.notes ? ' — ' + esc(x.notes) : ''}${hasCoords(x) ? `<br><span class="mono">${fmtCoords(x)}</span>` : ''}</td></tr>`))}
+    </table>
+    ${liveMembers(g).length ? `<h4 class="sub-h">Pessoas</h4><table>${liveMembers(g).map(m => `<tr><th>${esc(m.name)}${m.role ? `<br><span class="small">${esc(m.role)}</span>` : ''}</th>
+      <td>${esc(m.phone || '')}${m.consent && HEALTH_FIELDS.some(k => m[k]) ? `<br><span class="small">${esc([m.blood, m.allergies && 'Alergias: ' + m.allergies, m.meds && 'Medicação: ' + m.meds, m.needs].filter(Boolean).join(' · '))}</span>` : ''}</td></tr>`).join('')}</table>` : ''}
+    ${livePets(g).length ? `<h4 class="sub-h">Animais</h4><table>${livePets(g).map(a => `<tr><th>${esc(a.name)}<br><span class="small">${esc([a.species, a.breed].filter(Boolean).join(' · '))}</span></th>
+      <td>${a.chip ? 'Chip <span class="mono">' + esc(a.chip) + '</span>' : ''}${a.vetPhone ? '<br>Veterinário: ' + esc(a.vetPhone) : ''}</td></tr>`).join('')}</table>` : ''}
+  </section>`).join('') || '<p class="empty">Crie um grupo para preencher o cartão.</p>'}
+  <section class="card family-card">
+    <h3>Outros números</h3>
+    <table>${EMERGENCY_NUMBERS.filter(n => n.phone !== '112').map(n => `<tr><th>${esc(n.name)}</th><td>${esc(n.phone)}</td></tr>`).join('')}
+      ${['fire', 'police'].flatMap(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => `<tr><th>${esc(s.n)}</th><td>${esc(s.phone)}</td></tr>`)).join('')}
+      ${S.contacts.filter(c => c.priority && c.phone).map(c => `<tr><th>${esc(c.name)}</th><td>${esc(c.phone)}</td></tr>`).join('')}</table>
+  </section>`;
+}
+
 function viewMore() {
-  return `<section class="card"><ul class="list">${navOrder().slice(4).map(k => [k, ROUTES[k]]).map(([k, [t, ic, , , desc]]) => `
+  return `<a class="sos-entry" href="#/emergencia">${icon('alert')} Modo emergência</a>
+  <section class="card"><ul class="list">${navOrder().slice(4).map(k => [k, ROUTES[k]]).map(([k, [t, ic, , , desc]]) => `
+    <li class="row"><a class="row-link" href="#/${k}">${icon(ic)}<div class="row-main"><div class="row-title">${t}</div><div class="row-sub">${desc}</div></div><span class="chev" aria-hidden="true">›</span></a></li>`).join('')}
+  </ul></section>
+  <section class="card"><ul class="list">${[['cartao', 'Cartão da família', 'users', 'Para imprimir e guardar no kit'], ['sobre', 'Sobre e princípios', 'shield', 'Missão, princípios, privacidade']].map(([k, t, ic, desc]) => `
     <li class="row"><a class="row-link" href="#/${k}">${icon(ic)}<div class="row-main"><div class="row-title">${t}</div><div class="row-sub">${desc}</div></div><span class="chev" aria-hidden="true">›</span></a></li>`).join('')}
   </ul></section>`;
 }
@@ -1691,6 +1946,7 @@ function render() {
   if (map && r !== 'mapa') { map.remove(); map = null; mapLayer = null; }
   const draft = $('.chat-form input')?.value;
   $('#main').className = 'r-' + r;
+  document.documentElement.classList.toggle('crisis', r === 'emergencia');
   $('#main').innerHTML = pageHead(r, title) + `<div class="content">${ROUTES[r][2]()}</div>`;
   if (r === 'mapa') initMap();
   if (r === 'chat') { renderChatLog(); markChatRead(ui.chatGroup); }
@@ -1747,7 +2003,7 @@ const actions = {
   editMember: d => { const g = findGroup(d.id); memberForm(g, g.members.find(m => m.id === d.mid)); },
   shareGroup: d => { shareGroup(findGroup(d.id)); return 'async'; },
   joinGroup: () => { joinGroup(); return 'async'; },
-  exportBackup: () => { const { alertsCache, pointsCache, nostr, chat, ...data } = S; exportPackage('backup', data, `ekit-backup-${new Date().toISOString().slice(0, 10)}.json`); },
+  exportBackup: () => { const { alertsCache, pointsCache, nostr, chat, quakes, ...data } = S; exportPackage('backup', data, `ekit-backup-${new Date().toISOString().slice(0, 10)}.json`); S.settings.lastBackup = Date.now(); },
   import: () => $('#file').click(),
   exportIcs,
   addList: () => openForm({ title: 'Nova lista', fields: [{ k: 'name', label: 'Nome', required: true }], onSave: v => { S.lists.push({ id: uid(), name: v.name, items: [] }); } }),
@@ -1758,6 +2014,9 @@ const actions = {
   fetchAlerts: () => { fetchAlerts(); return 'async'; },
   locate: () => { ui.recenter = true; locate(); return 'async'; },
   useLocation: () => { locate(); return 'async'; },
+  saveMap: () => { saveMapArea(); return 'async'; },
+  status: d => { sendStatus(d.v === 'help'); return 'async'; },
+  print: () => { window.print(); return 'async'; },
   findServices: () => { findServices(); return 'async'; },
   forgetPos: () => { delete S.lastPos; ui.pos = null; },
   showPoint: d => {
@@ -1829,6 +2088,7 @@ document.addEventListener('change', e => {
   if (e.target.type === 'checkbox') { S.settings[k] = e.target.checked; if (k === 'chatNotify' && e.target.checked) enableChatNotifications(); save(); return; }
   if (k === 'relays') { S.settings.relays = e.target.value.split(/\s+/).filter(u => /^wss?:\/\/\S+$/.test(u)); setTimeout(restartHub, 0); }
   else if (k === 'district') { S.settings.district = e.target.value; S.settings.autoDistrict = false; }
+  else if (k === 'radio') { S.settings.radio = e.target.value.trim().slice(0, 60); save(); return; }
   else S.settings[k] = Math.max(1, Number(e.target.value) || 1);
   save(); render();
 });

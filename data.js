@@ -56,6 +56,15 @@ export const DEFAULT_LISTS = [
   { name: 'Revisão semestral do kit', items: [
     'Verificar validades de água e comida', 'Testar lanterna e rádio', 'Trocar pilhas se necessário',
     'Carregar powerbank', 'Atualizar medicação e receitas', 'Confirmar contactos e ponto de encontro',
+    'Simulacro: ir com a família ao ponto de encontro', 'Exportar uma cópia de segurança da eKit',
+  ] },
+  { name: 'Documentos importantes (cópias no kit)', items: [
+    'Cartão de cidadão / passaporte', 'Cartão de utente e receitas', 'Apólices de seguro (casa, saúde, carro)',
+    'Contactos em papel (cartão da família)', 'Algum dinheiro em notas e moedas', 'Chaves suplentes de casa e do carro',
+  ] },
+  { name: 'Vizinhos a verificar', items: [
+    'Saber quem na rua ou no prédio vive sozinho ou tem mobilidade reduzida',
+    'Combinar quem bate à porta de quem numa emergência', 'Ter o telefone de um vizinho de confiança',
   ] },
 ];
 
@@ -98,6 +107,19 @@ export const GUIDES = [
     'Escolha uma divisão interior; vede frinchas com fita adesiva e panos húmidos.',
     'Sintonize a rádio e só saia quando as autoridades indicarem.',
   ] },
+  { id: 'tsunami', icon: '🌊', title: 'Tsunami', steps: [
+    'Se sentir um sismo forte junto à costa ou vir o mar recuar de repente: não espere por avisos.',
+    'Afaste-se logo da costa, a pé, para uma zona alta (mais de 30 m) ou para o ponto de tsunami mais próximo.',
+    'Se não conseguir sair, suba aos pisos mais altos de um edifício resistente.',
+    'Podem vir várias ondas durante horas. Só regresse quando as autoridades indicarem.',
+  ] },
+  { id: 'telemovel', icon: '📱', title: 'Preparar o telemóvel (fazer já)', steps: [
+    'Ative os alertas de emergência. iPhone: Definições › Notificações › Alertas de emergência. Android: Definições › Segurança e emergência › Alertas de emergência sem fios.',
+    'Preencha a ficha médica e mostre-a no ecrã bloqueado. iPhone: app Saúde › Ficha médica. Android: Segurança e emergência › Informações médicas.',
+    'Adicione contactos de emergência na ficha médica: os socorristas veem-nos sem desbloquear o telemóvel.',
+    'Guarde o mapa da sua zona sem internet (Mapa › Guardar mapa da minha zona) e imprima o cartão da família.',
+    'Tenha uma powerbank carregada e um carregador no kit.',
+  ] },
   { id: 'evacuacao', icon: '🚶', title: 'Evacuação', steps: [
     'Siga a lista "Antes de sair de casa".',
     'Leve o kit, documentos, medicação e animais de estimação.',
@@ -124,6 +146,9 @@ export const DISTRICT_CAPITALS = {
 };
 // OpenStreetMap (Overpass): bombeiros, polícia e distrito da zona. Só com pedido do utilizador.
 export const OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+
+// Sismos (IPMA): área 7 = continente e Madeira, área 3 = Açores.
+export const SEISMIC_URL = area => `https://api.ipma.pt/open-data/observation/seismic/${area}.json`;
 
 export const IPMA_WARNINGS_URL = 'https://api.ipma.pt/open-data/forecast/warnings/warnings_www.json';
 

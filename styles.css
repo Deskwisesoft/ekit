@@ -243,6 +243,40 @@ dialog::backdrop { background: rgb(8 18 32 / .55); }
 .fact .ic { color: var(--accent); }
 .fact strong { display: block; margin: 6px 0 2px; }
 
+/* Modo emergência: escuro (poupa bateria em ecrãs OLED), letra grande, poucos elementos */
+html.crisis {
+  --bg: #05080c; --card: #0e141b; --text: #f2f5f8; --muted: #b3bdc8; --line: #253140; --strong-line: #5d6b7b;
+  --accent: #9cc4f0; --accent-ink: #05080c; --accent-soft: #15243a; --chip: #18222e;
+  --good: #3fb56a; --good-bg: #10281a; --good-ink: #04110a; --bad: #ff8a80; --bad-bg: #3a1411;
+  --warn: #f5c451; --warn-bg: #33270a; --brand-text: #f2f5f8; color-scheme: dark;
+}
+html.crisis body { font-size: 1.06rem; }
+html.crisis .site-head, html.crisis header.top { background: var(--card); }
+.sos-entry { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 54px; border-radius: var(--radius);
+  background: var(--text); color: var(--bg); font-weight: 700; font-size: 1.08rem; text-decoration: none; }
+.status-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.status-btns .btn { min-height: 64px; font-size: 1.1rem; font-weight: 700; }
+.btn.ok { background: var(--good); color: var(--good-ink); border-color: var(--good); }
+.btn.help { background: var(--bad-bg); color: var(--bad); border: 2px solid var(--bad); }
+.crisis-exit { text-align: center; }
+.tips { margin: 0; padding-left: 1.2em; } .tips li { margin: 4px 0; }
+.sec-h { font-size: 1.25rem; margin: 10px 0 0; }
+details.adv > summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-top: 12px; }
+.progress { height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+.progress > i { display: block; height: 100%; background: var(--accent); width: 0; }
+/* Cartão da família para imprimir */
+.family-card h2 { font-size: 1.3rem; }
+.family-card table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+.family-card td, .family-card th { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+@media print {
+  header, nav, footer, .no-print, #toast, .page-head { display: none !important; }
+  html, body { background: #fff !important; color: #000 !important; }
+  main { max-width: none; padding: 0; }
+  .card { border: 1px solid #999; break-inside: avoid; page-break-inside: avoid; }
+  .content { display: block !important; }
+  a { color: #000; text-decoration: none; }
+}
+
 /* Painel: próximos passos do kit e localização */
 .hero-body { flex: 1; min-width: 0; }
 .next { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -313,16 +347,17 @@ main { flex: 1 0 auto; width: 100%; align-content: start; }
   .page-head p { max-width: 75ch; }
 
   .r-painel .content { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-  .r-painel .content > .alert-banner { grid-column: 1 / -1; }
+  .r-painel .content > .alert-banner, .r-painel .content > .sos-entry, .r-painel .content > .note { grid-column: 1 / -1; }
+  main.r-emergencia, main.r-cartao { max-width: 760px; }
 
   .r-kit .content, .r-guia .content, .r-listas .content, .r-grupos .content,
   .r-contactos .content, .r-definicoes .content, .r-sobre .content { display: block; columns: 2; column-gap: 16px; }
   .r-kit .content > *, .r-guia .content > *, .r-listas .content > *, .r-grupos .content > *,
   .r-contactos .content > *, .r-definicoes .content > *, .r-sobre .content > * { break-inside: avoid; margin: 0 0 16px; }
-  .content > .toolbar, .content > .empty, .r-guia .content > p { column-span: all; }
+  .content > .toolbar, .content > .empty, .r-guia .content > p, .r-guia .content > h2 { column-span: all; }
 
   .r-mapa .content { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
-  .r-mapa .content > :first-child { grid-row: span 2; }
+  .r-mapa .content > :first-child { grid-row: span 4; }
   .r-mapa .map { height: min(72vh, 680px); }
 
   .r-alertas .content { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }

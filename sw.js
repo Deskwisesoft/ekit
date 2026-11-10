@@ -1,8 +1,9 @@
 // Service worker: app disponível offline + cache de mapa (Leaflet e mosaicos já vistos).
-const VERSION = 'ekit-v22';
+const VERSION = 'ekit-v23';
 const APP = ['./', './index.html', './styles.css', './app.js', './data.js', './pontos-encontro.json', './manifest.webmanifest', './privacidade.html', './icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './chat.js', './vendor/nostr-tools-2.25.1.js', './vendor/fonts/source-sans-3-latin-wght-normal.woff2', './vendor/fonts/source-serif-4-latin-wght-normal.woff2',
   './vendor/leaflet/leaflet.min.js', './vendor/leaflet/leaflet.min.css'];
 const TILES = 'ekit-tiles';
+const SAVED = 'ekit-tiles-saved'; // zona guardada pelo utilizador: nunca é apagada automaticamente
 const MAX_TILES = 1500;
 
 self.addEventListener('install', e => {
@@ -13,7 +14,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== TILES).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== TILES && k !== SAVED).map(k => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -30,14 +31,20 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
 
   // Mosaicos do mapa: cache primeiro, guarda os que vão sendo vistos.
+  // "?keep" = pedido de "Guardar mapa da minha zona": fica na cache permanente.
   if (url.hostname === 'tile.openstreetmap.org') {
-    e.respondWith(caches.open(TILES).then(async c => {
-      const hit = await c.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) { c.put(req, res.clone()); trimTiles(); }
+    const keep = url.searchParams.has('keep'), clean = url.origin + url.pathname;
+    e.respondWith((async () => {
+      const saved = await caches.open(SAVED), tiles = await caches.open(TILES);
+      const hit = (await saved.match(clean)) || (await tiles.match(clean));
+      if (hit) { if (keep) await saved.put(clean, hit.clone()); return hit; }
+      const res = await fetch(clean, { mode: 'cors', credentials: 'omit' });
+      if (res.ok) {
+        if (keep) await saved.put(clean, res.clone());
+        else { await tiles.put(clean, res.clone()); trimTiles(); }
+      }
       return res;
-    }));
+    })());
     return;
   }
 

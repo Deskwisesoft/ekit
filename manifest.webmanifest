@@ -38,5 +38,29 @@
   "categories": [
     "utilities",
     "lifestyle"
+  ],
+  "shortcuts": [
+    {
+      "name": "Modo emergência",
+      "short_name": "Emergência",
+      "url": "./#/emergencia",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Pontos de encontro",
+      "short_name": "Mapa",
+      "url": "./#/mapa",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }
