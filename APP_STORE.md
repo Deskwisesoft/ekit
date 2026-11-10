@@ -16,7 +16,7 @@ Uma vez só:
 1. **developer.apple.com → Certificates, IDs & Profiles → Identifiers → "+"**: registar o App ID `io.github.deskwisesoft.ekit` (ativar *Push Notifications* não é necessário; os lembretes são locais).
 2. **App Store Connect → Apps → "+" → Nova app**: plataforma iOS, nome "eKit – Kit de Emergência", idioma Português (Portugal), Bundle ID acima, SKU `ekit`.
 3. **App Store Connect → Utilizadores e acesso → Integrações → App Store Connect API**: gerar uma chave com função *App Manager* e descarregar o ficheiro `.p8` (só pode ser descarregado uma vez).
-4. **Codemagic → Team settings → Integrations → Developer Portal → Connect**: dar o nome **`eKit ASC`**, colar o *Issuer ID*, o *Key ID* e carregar o `.p8`. A chave fica só no Codemagic; nunca a coloque no repositório.
+4. **Codemagic → Team settings → Integrations → Developer Portal → Connect**: usar a chave já existente **`Convocado ASC`** (ou criar uma com outro nome e atualizar `codemagic.yaml`), colar o *Issuer ID*, o *Key ID* e carregar o `.p8`. A chave fica só no Codemagic; nunca a coloque no repositório.
 
 Em cada versão:
 

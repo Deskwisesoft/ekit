@@ -3,7 +3,7 @@
 #
 # Antes da primeira build (uma vez):
 #  1. App Store Connect > Utilizadores e acesso > Integrações > App Store Connect API: criar chave (função "App Manager").
-#  2. Codemagic > Team settings > Integrations > Developer Portal: adicionar essa chave com o nome "eKit ASC"
+#  2. Codemagic > Team settings > Integrations > Developer Portal: adicionar essa chave (aqui: "Convocado ASC", a mesma chave da conta)
 #     (ou mudar o nome em integrations.app_store_connect abaixo).
 #  3. App Store Connect > Apps > "+": criar a app com o Bundle ID abaixo (registá-lo antes em developer.apple.com > Identifiers).
 #
@@ -15,7 +15,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
-      app_store_connect: eKit ASC
+      app_store_connect: Convocado ASC
     environment:
       ios_signing:
         distribution_type: app_store
