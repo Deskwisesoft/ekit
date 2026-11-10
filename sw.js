@@ -1,5 +1,5 @@
 // Service worker: app disponível offline + cache de mapa (Leaflet e mosaicos já vistos).
-const VERSION = 'ekit-v28';
+const VERSION = 'ekit-v29';
 const APP = ['./', './index.html', './styles.css', './app.js', './data.js', './pontos-encontro.json', './manifest.webmanifest', './privacidade.html', './icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './chat.js', './vendor/nostr-tools-2.25.1.js', './vendor/fonts/source-sans-3-latin-wght-normal.woff2', './vendor/fonts/source-serif-4-latin-wght-normal.woff2',
   './vendor/leaflet/leaflet.min.js', './vendor/leaflet/leaflet.min.css'];
 const TILES = 'ekit-tiles-2'; // -2: limpa partes guardadas sem a origem (bloqueadas pelo OSM)

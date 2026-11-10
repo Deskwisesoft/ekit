@@ -27,8 +27,9 @@ function seed() {
 const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes'];
 const MEMBER_FIELDS = ['name', 'phone', 'role', 'bitchat', 'needs', 'allergies', 'meds', 'blood', 'consentAt'];
 const HEALTH_FIELDS = ['needs', 'allergies', 'meds', 'blood'];
-// Secções que podem ir para a barra: as 4 primeiras ficam no telemóvel, o resto vai para o Menu.
-const NAV_KEYS = ['painel', 'preparar', 'grupos', 'mapa', 'kit', 'alertas', 'contactos', 'guia'];
+// As 4 primeiras ficam na barra (telemóvel e computador); as outras estão no Menu.
+// "Preparar" e "Avisos" já se abrem a partir do Início, por isso não ocupam a barra.
+const NAV_KEYS = ['painel', 'kit', 'grupos', 'mapa', 'preparar', 'alertas', 'contactos', 'guia'];
 const arr = v => (Array.isArray(v) ? v : []);
 const str = (v, max = 500) => (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, max);
 const num = (v, d = 0) => (v !== '' && v != null && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -1465,7 +1466,7 @@ function viewSettings() {
   </section>
   <details class="card fold" data-fold="set-nav" ${isOpen('set-nav', false) ? 'open' : ''}>
     <summary>${icon('list')}<span class="fold-t">Ordem dos menus</span></summary>
-    <p class="muted small">No telemóvel, as 4 primeiras ficam na barra de baixo; as outras ficam no Menu.</p>
+    <p class="muted small">As 4 primeiras ficam na barra; as outras ficam no Menu.</p>
     <ol class="list nav-order">${navOrder().map((k, i, o) => `
       <li class="row ${i === 3 ? 'nav-cut' : ''}"><span class="cat-ic">${icon(ROUTES[k][1])}</span>
         <div class="row-main"><div class="row-title">${esc(ROUTES[k][0])}</div>${i < 4 ? '<div class="row-sub">Barra principal</div>' : ''}</div>
@@ -2063,7 +2064,7 @@ function viewMore() {
   const block = (title, items) => `<section class="card"><h3>${title}</h3><ul class="list">${items.map(link).join('')}</ul></section>`;
   const sec = k => [k, ROUTES[k][0], ROUTES[k][1], ROUTES[k][4]];
   return `<a class="sos-entry" href="#/emergencia">${icon('alert')} Modo emergência</a>
-  ${block('Preparar', navOrder().slice(4).map(sec))}
+  ${block('Secções', navOrder().slice(4).map(sec))}
   ${block('Ter à mão', [['cartao', 'Cartão da família', 'users', 'Para imprimir e guardar no kit']])}
   ${block('Aplicação', [sec('definicoes'), ['sobre', 'Sobre e privacidade', 'shield', 'Missão, princípios, dados']])}`;
 }
@@ -2092,13 +2093,12 @@ function render() {
   const r = route();
   const urgent = districtAlerts().filter(w => SEV[w.awarenessLevelID] >= 2).length;
   const order = navOrder();
-  // Telemóvel: 4 secções + Menu. Computador: todas as secções + Menu (Definições, Sobre, Cartão).
+  // Telemóvel e computador: as mesmas 4 secções + Menu.
   const here = r === 'chat' ? 'grupos' : r;
   const inMenuMobile = !order.slice(0, 4).includes(here);
-  const inMenuDesktop = !order.includes(here);
   $('#nav').innerHTML = [...order, 'mais'].map((k, i) => {
     const [t, ic] = ROUTES[k];
-    const current = k === here || (k === 'mais' && inMenuDesktop);
+    const current = k === here || (k === 'mais' && inMenuMobile);
     const cls = k === 'mais' ? `more${inMenuMobile ? ' cur-m' : ''}` : i < 4 ? 'pri' : 'sec';
     return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${navBadge(k, order)}</a>`;
   }).join('');

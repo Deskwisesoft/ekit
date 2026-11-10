@@ -72,7 +72,7 @@ nav a {
 nav a:hover { color: var(--text); }
 nav a[aria-current] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
 nav a.more { margin-left: auto; }
-nav a.more .dot-count { display: none; }
+nav a.sec { display: none; }
 .dot-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--danger); color: var(--danger-ink); font-size: .72rem; line-height: 18px; text-align: center; font-weight: 700; }
 
 @media (max-width: 767px) {
