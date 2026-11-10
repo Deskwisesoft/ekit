@@ -310,7 +310,26 @@ const ICONS = {
   nav: '<path d="m3 11 19-9-9 19-2-8z"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+  drop: '<path d="M12 2.7s6 6.6 6 11.3a6 6 0 0 1-12 0c0-4.7 6-11.3 6-11.3z"/>',
+  health: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+  tool: '<path d="M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-2-2 5.4-5.4a4 4 0 0 0-5-5L8 11 6 9l2.7-2.7a4 4 0 0 1 6 0z"/>',
+  box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+  flame: '<path d="M12 22a7 7 0 0 0 7-7c0-4-3-6-4-9-1 2-2 3-3 3 0-2-1-4-2-6-1 4-5 7-5 12a7 7 0 0 0 7 7z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  wave: '<path d="M2 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 17c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 7c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>',
+  quake: '<path d="M2 12h4l2-5 3 10 3-8 2 3h6"/>',
+  route: '<circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h8a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h8"/>',
+  shield: '<path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5z"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>',
+  wifioff: '<path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.8M19 12.9a10 10 0 0 0-2.3-1.6M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.7 5M12 20h.01"/>',
+  star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
 };
+const CAT_ICONS = { agua: 'drop', saude: 'health', energia: 'bolt', docs: 'doc', abrigo: 'tool', outros: 'box' };
+const GUIDE_ICONS = { sismo: 'quake', inundacao: 'wave', incendio: 'flame', apagao: 'bolt', calor: 'sun', abrigo: 'home', evacuacao: 'route' };
+const catIcon = id => `<span class="cat-ic">${icon(CAT_ICONS[id] || 'box')}</span>`;
 const icon = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 
 // ---------- Formulário genérico (diálogo) ----------
@@ -323,7 +342,7 @@ function fieldHTML(f, v) {
       <div class="geo">
         <input name="lat" inputmode="decimal" placeholder="38.72225" value="${esc(v?.lat)}" aria-label="Latitude">
         <input name="lng" inputmode="decimal" placeholder="-9.13934" value="${esc(v?.lng)}" aria-label="Longitude">
-        <button type="button" class="btn" data-here>📍 Aqui</button>
+        <button type="button" class="btn" data-here>Usar a minha posição</button>
       </div>`;
     case 'checkbox': return `<label class="check"><input type="checkbox" name="${f.k}" ${v ? 'checked' : ''}> ${esc(f.label)}</label>`;
     case 'select': return `<label for="${id}">${esc(f.label)}</label><select id="${id}" name="${f.k}">${f.options.map(([val, txt]) => `<option value="${esc(val)}" ${val === v ? 'selected' : ''}>${esc(txt)}</option>`).join('')}</select>`;
@@ -364,7 +383,7 @@ function openForm({ title, fields, values = {}, onSave, onDelete, submitLabel = 
   d.querySelector('[data-cancel]').onclick = () => d.close();
   const setGeo = p => { form.elements.lat.value = p.lat.toFixed(6); form.elements.lng.value = p.lng.toFixed(6); };
   const here = d.querySelector('[data-here]');
-  if (here) here.onclick = () => { here.textContent = '…'; locate(p => { setGeo(p); here.textContent = '📍 Aqui'; }); };
+  if (here) here.onclick = () => { here.textContent = '…'; locate(p => { setGeo(p); here.textContent = 'Usar a minha posição'; }); };
   const off = form.elements.official;
   if (off) off.onchange = () => {
     const p = POINTS[off.value];
@@ -441,12 +460,12 @@ function viewKit() {
   ${CATEGORIES.map(c => {
     const items = S.kit.filter(i => i.cat === c.id && show(i));
     if (!items.length) return '';
-    return `<section class="card"><h3>${c.icon} ${esc(c.name)}</h3><ul class="list">${items.map(kitRow).join('')}</ul></section>`;
-  }).join('') || '<p class="empty">Nenhum item neste filtro. 🎉</p>'}`;
+    return `<section class="card"><h3>${catIcon(c.id)}${esc(c.name)}</h3><ul class="list">${items.map(kitRow).join('')}</ul></section>`;
+  }).join('') || '<p class="empty">Nenhum item neste filtro.</p>'}`;
 }
 function kitRow(i) {
   const n = need(i), ok = isOk(i), e = expiryState(i);
-  const meta = [n > 0 ? `Necessário: ${n} ${esc(i.unit)}` : 'Opcional', i.location && '📍 ' + esc(i.location)].filter(Boolean).join(' · ');
+  const meta = [n > 0 ? `Necessário: ${n} ${esc(i.unit)}` : 'Opcional', i.location && 'Guardado em: ' + esc(i.location)].filter(Boolean).join(' · ');
   return `<li class="row ${ok ? 'done' : ''}">
     <button class="tick" data-act="fill" data-id="${i.id}" aria-label="Marcar como completo">${ok ? '✓' : ''}</button>
     <div class="row-main" data-act="editItem" data-id="${i.id}">
@@ -490,10 +509,10 @@ function viewContacts() {
     <div class="toolbar"><h3>Os meus contactos</h3><button class="btn primary" data-act="addContact">+ Contacto</button></div>
     ${S.contacts.length ? `<ul class="list">${S.contacts.map(c => `
       <li class="row"><div class="row-main" data-act="editContact" data-id="${c.id}">
-        <div class="row-title">${c.priority ? '⭐ ' : ''}${esc(c.name)}</div>
+        <div class="row-title">${esc(c.name)}${c.priority ? ' <span class="badge">favorito</span>' : ''}</div>
         <div class="row-sub">${esc([c.relation, c.notes].filter(Boolean).join(' · '))}</div>
-      </div>${c.phone ? `<a class="btn" href="${telHref(c.phone)}">📞</a>` : ''}</li>`).join('')}</ul>`
-      : '<p class="muted">Adicione familiares, vizinhos, médico, seguradora… Os favoritos (⭐) aparecem no painel.</p>'}
+      </div>${c.phone ? `<a class="btn" href="${telHref(c.phone)}" aria-label="Ligar a ${esc(c.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>`
+      : '<p class="muted">Adicione familiares, vizinhos, médico, seguradora… Os contactos marcados como favoritos aparecem no painel.</p>'}
   </section>`;
 }
 function contactForm(c) {
@@ -523,7 +542,7 @@ function viewGroups() {
   ${S.groups.length ? S.groups.map(g => `
     <section class="card">
       <div class="toolbar">
-        <h3>👥 ${esc(g.name)}</h3> ${syncBadge(g)}<span class="spacer"></span>
+        <h3><span class="cat-ic">${icon('users')}</span>${esc(g.name)}</h3> ${syncBadge(g)}<span class="spacer"></span>
         <a class="btn" href="#/chat/${g.id}">${icon('chat')} Chat</a>
         <button class="btn ghost" data-act="editGroup" data-id="${g.id}">Editar</button>
         <button class="btn ghost" data-act="exportGroup" data-id="${g.id}">Partilhar</button>
@@ -536,8 +555,8 @@ function viewGroups() {
       <ul class="list">${liveMembers(g).map(m => `
         <li class="row"><div class="row-main" data-act="editMember" data-id="${g.id}" data-mid="${m.id}">
           <div class="row-title">${esc(m.name)}${m.role ? ` <span class="badge">${esc(m.role)}</span>` : ''}</div>
-          ${m.needs ? `<div class="row-sub">🩺 ${esc(m.needs)}</div>` : ''}
-        </div>${m.phone ? `<a class="btn" href="${telHref(m.phone)}">📞</a>` : ''}</li>`).join('')}</ul>
+          ${m.needs ? `<div class="row-sub">Necessidades: ${esc(m.needs)}</div>` : ''}
+        </div>${m.phone ? `<a class="btn" href="${telHref(m.phone)}" aria-label="Ligar a ${esc(m.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>
       <button class="btn ghost" data-act="addMember" data-id="${g.id}">+ Pessoa</button>
     </section>`).join('')
     : '<p class="empty">Crie um grupo para a família, vizinhos, condomínio ou equipa de trabalho.</p>'}`;
@@ -616,7 +635,7 @@ function viewLists() {
 
 function viewGuide() {
   return GUIDES.map(g => `
-    <details class="card guide"><summary>${g.icon} ${esc(g.title)}</summary>
+    <details class="card guide"><summary>${icon(GUIDE_ICONS[g.id] || 'alert')} ${esc(g.title)}</summary>
       <ol>${g.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
     </details>`).join('') +
     '<p class="muted small">Informação geral. Siga sempre as indicações das autoridades locais (ANEPC, 112).</p>';
@@ -651,7 +670,7 @@ function viewMap() {
   return `
   <section class="card">
     <div class="toolbar">
-      <button class="btn primary" data-act="locate">📍 Onde estou</button>
+      <button class="btn primary" data-act="locate">${icon('pin')} Onde estou</button>
       <span class="legend"><i class="dot mine"></i>Grupos <i class="dot off"></i>Oficiais <i class="dot tsu"></i>Tsunami</span>
     </div>
     ${ui.geoError ? `<p class="muted small">${esc(ui.geoError)}</p>` : ''}
@@ -662,7 +681,7 @@ function viewMap() {
     <h3>Pontos mais próximos</h3>
     ${ui.pos ? `<ul class="list">${nearest.map(({ p, d }) => `
       <li class="row"><div class="row-main">
-        <div class="row-title">${p.mine ? '⭐ ' : ''}${esc(p.n)} <span class="badge ${p.t === 'Tsunami' ? 'warn' : ''}">${esc(p.m)}${p.t === 'Tsunami' ? ' · tsunami' : ''}</span></div>
+        <div class="row-title">${esc(p.n)} <span class="badge ${p.t === 'Tsunami' ? 'warn' : ''}">${esc(p.m)}${p.t === 'Tsunami' ? ' · tsunami' : ''}</span></div>
         <div class="row-sub"><strong>${fmtDist(d)}</strong> para ${bearing(ui.pos, p)} · <span class="mono">${fmtCoords(p)}</span>${p.cap ? ` · capacidade ${p.cap.toLocaleString('pt-PT')} pessoas` : ''}</div>
         <div class="row-sub">${navLinks(p, p.n)}</div>
       </div></li>`).join('')}</ul>`
@@ -673,7 +692,7 @@ function viewMap() {
     <ul class="plain">${POINTS_META.sources.map(s => `<li><strong>${esc(s.m)}</strong>: <a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a> — ${esc(s.license)}</li>`).join('')}</ul>
     <p class="muted small">${POINTS.length} pontos incluídos na app (disponíveis offline).${at ? ' Lisboa atualizada em ' + new Date(at).toLocaleString('pt-PT') + '.' : ''}
       Outros municípios ainda não publicam estes dados em formato aberto; confirme sempre no Plano Municipal de Emergência do seu concelho.</p>
-    <button class="btn" data-act="refreshLisboa" ${ui.pointsLoading ? 'disabled' : ''}>${ui.pointsLoading ? 'A atualizar…' : '🔄 Atualizar pontos de Lisboa'}</button>
+    <button class="btn" data-act="refreshLisboa" ${ui.pointsLoading ? 'disabled' : ''}>${ui.pointsLoading ? 'A atualizar…' : 'Atualizar pontos de Lisboa'}</button>
   </section>`;
 }
 
@@ -720,8 +739,8 @@ function viewSettings() {
   <section class="card">
     <h3>Lembretes</h3>
     <div class="grid-buttons">
-      <button class="btn" data-act="enableNotif" ${notif !== 'default' ? 'disabled' : ''}>${notif === 'granted' ? '🔔 Notificações ativas' : notif === 'denied' ? 'Notificações bloqueadas' : '🔔 Ativar notificações'}</button>
-      <button class="btn" data-act="exportIcs">📅 Validades para o calendário</button>
+      <button class="btn" data-act="enableNotif" ${notif !== 'default' ? 'disabled' : ''}>${notif === 'granted' ? 'Notificações ativas' : notif === 'denied' ? 'Notificações bloqueadas' : 'Ativar notificações'}</button>
+      <button class="btn" data-act="exportIcs">Validades para o calendário</button>
     </div>
     <p class="muted small">As notificações aparecem quando abre a app. Para lembretes mesmo com a app fechada, exporte as validades para o calendário do telemóvel.</p>
   </section>
@@ -746,7 +765,7 @@ function viewSettings() {
       <li>Dados de saúde de membros só são guardados com consentimento explícito registado.</li>
       <li>Pode apagar tudo a qualquer momento (direito ao apagamento).</li>
     </ul>
-    <button class="btn danger" data-act="wipe">🗑️ Apagar todos os dados</button>
+    <button class="btn danger" data-act="wipe">Apagar todos os dados</button>
   </section>`;
 }
 
@@ -980,21 +999,81 @@ function viewChat() {
 // ---------- Router e eventos ----------
 // [título, ícone, ecrã, nível] — nível 1: barra principal; 0: dentro de "Mais"; 2: o próprio "Mais"
 const ROUTES = {
-  painel: ['Painel', 'home', viewDashboard, 1], kit: ['Kit', 'kit', viewKit, 1], mapa: ['Mapa', 'map', viewMap, 1],
-  alertas: ['Alertas', 'alert', viewAlerts, 1],
+  painel: ['Painel', 'home', viewDashboard, 1, ''],
+  kit: ['Kit de emergência', 'kit', viewKit, 1, 'Lista recomendada para 72 horas de autonomia, ajustada ao seu agregado. Reveja-a a cada seis meses.'],
+  mapa: ['Pontos de encontro', 'map', viewMap, 1, 'Os pontos do seu grupo e os pontos oficiais publicados pelos municípios. A distância funciona sem internet.'],
+  alertas: ['Avisos', 'alert', viewAlerts, 1, 'Avisos meteorológicos do IPMA para a sua zona. Em caso de dúvida, prevalece sempre a informação oficial.'],
   contactos: ['Contactos', 'phone', viewContacts, 0, 'Números de emergência e contactos pessoais'],
   grupos: ['Grupos', 'users', viewGroups, 0, 'Família, vizinhos, pontos de encontro'],
   listas: ['Listas', 'list', viewLists, 0, 'Evacuação, revisão do kit, listas próprias'],
   guia: ['Guia', 'book', viewGuide, 0, 'O que fazer em sismo, inundação, incêndio…'],
   definicoes: ['Definições', 'settings', viewSettings, 0, 'Agregado, lembretes, cópia de segurança, privacidade'],
-  mais: ['Mais', 'more', viewMore, 2],
+  sobre: ['Sobre e princípios', 'shield', viewAbout, 0, 'Missão, utilização responsável e proteção de dados'],
+  mais: ['Mais', 'more', viewMore, 2, ''],
 };
-ROUTES.chat = ['Chat', 'chat', viewChat, -1];
+ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Mensagens cifradas entre os membros. Sem internet, continue pelo bitchat.'];
 const route = () => {
   const r = location.hash.slice(2);
   if (r.startsWith('chat/')) { ui.chatGroup = r.slice(5); return 'chat'; }
   return ROUTES[r] && r !== 'chat' ? r : 'painel';
 };
+
+const NAV_SHORT = { kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre' };
+
+function pageHead(r, title) {
+  if (r === 'painel') {
+    const d = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
+    return `<header class="page-head"><span class="eyebrow">${esc(d)}</span><h1>A sua preparação</h1>
+      <p>Uma casa preparada protege quem lá vive e quem precisa de ajuda à volta. Comece pelo que falta.</p></header>`;
+  }
+  const desc = ROUTES[r][4];
+  return `<header class="page-head"><h1>${esc(title)}</h1>${desc ? `<p>${esc(desc)}</p>` : ''}</header>`;
+}
+
+function viewAbout() {
+  return `
+  <section class="card">
+    <h3>A nossa missão</h3>
+    <p>A eKit ajuda pessoas e famílias a prepararem-se para emergências, seguindo as recomendações europeias de autonomia durante 72 horas.
+      Reúne num só lugar o kit, as validades, os contactos, os pontos de encontro e a comunicação entre quem mais importa.</p>
+    <p class="note"><strong>A eKit não substitui as autoridades.</strong> É uma iniciativa independente, não um serviço oficial.
+      Em emergência ligue <a href="tel:112">112</a> e siga sempre as indicações da proteção civil e do seu município.</p>
+  </section>
+
+  <section class="card">
+    <h3>Princípios de utilização responsável</h3>
+    <ol class="principles">
+      <li><div><strong>A informação oficial vem primeiro.</strong>Use a eKit para se preparar; em crise, confirme sempre nas fontes oficiais e não partilhe rumores.</div></li>
+      <li><div><strong>Partilhe dados de outras pessoas só com o seu consentimento.</strong>Sobretudo dados de saúde de familiares, que são dados especialmente protegidos.</div></li>
+      <li><div><strong>Mantenha o kit em dia.</strong>Reveja validades e quantidades a cada seis meses e sempre que a família mudar.</div></li>
+      <li><div><strong>Combine o plano antes da emergência.</strong>Ponto de encontro, quem vai buscar quem e como comunicar sem internet.</div></li>
+      <li><div><strong>Use o chat com sobriedade.</strong>Mensagens curtas e úteis: onde está, como está, do que precisa.</div></li>
+      <li><div><strong>Lembre-se de quem está à sua volta.</strong>Vizinhos idosos, pessoas com mobilidade reduzida ou sozinhas podem precisar de si.</div></li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3 id="privacidade">Privacidade e proteção de dados</h3>
+    <div class="facts">
+      <div class="fact">${icon('lock')}<strong>Sem contas nem servidor</strong><span class="muted small">Os seus dados ficam apenas neste dispositivo.</span></div>
+      <div class="fact">${icon('users')}<strong>Partilha só por grupo</strong><span class="muted small">Cada grupo tem a sua chave; os relays só veem texto cifrado.</span></div>
+      <div class="fact">${icon('shield')}<strong>Consentimento registado</strong><span class="muted small">Dados de saúde exigem o consentimento explícito da pessoa.</span></div>
+      <div class="fact">${icon('wifioff')}<strong>Funciona offline</strong><span class="muted small">Sem rede, o essencial continua disponível.</span></div>
+    </div>
+    <p class="muted small">Pode exportar ou apagar todos os seus dados a qualquer momento nas <a href="#/definicoes">Definições</a>. A eKit não usa publicidade, rastreio nem análise de utilização.</p>
+  </section>
+
+  <section class="card">
+    <h3>Fontes e transparência</h3>
+    <ul class="plain">
+      <li>Recomendações de preparação: União Europeia (autonomia de 72 horas) e orientações nacionais de proteção civil.</li>
+      <li>Avisos meteorológicos: Instituto Português do Mar e da Atmosfera (IPMA), dados abertos.</li>
+      <li>Pontos de encontro: Município de Lisboa (CC0) e Município de Cascais (CC-BY), dados abertos.</li>
+      <li>Mapa: © colaboradores OpenStreetMap.</li>
+      <li>Código-fonte aberto e auditável: <a href="https://github.com/Deskwisesoft/ekit" target="_blank" rel="noopener">github.com/Deskwisesoft/ekit</a>.</li>
+    </ul>
+  </section>`;
+}
 
 function viewMore() {
   return `<section class="card"><ul class="list">${Object.entries(ROUTES).filter(([, v]) => v[3] === 0).map(([k, [t, ic, , , desc]]) => `
@@ -1008,12 +1087,13 @@ function render() {
   $('#nav').innerHTML = Object.entries(ROUTES).filter(([, v]) => v[3] >= 0).map(([k, [t, ic, , lvl]]) => {
     const current = k === r || (k === 'mais' && ROUTES[r][3] <= 0);
     const cls = ['', 'pri', 'more'][lvl] || 'sec';
-    return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${t}</span>${k === 'alertas' && urgent ? `<b class="dot-count" aria-label="${urgent} avisos graves">${urgent}</b>` : ''}</a>`;
+    return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${k === 'alertas' && urgent ? `<b class="dot-count" aria-label="${urgent} avisos graves">${urgent}</b>` : ''}</a>`;
   }).join('');
-  $('#title').textContent = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
+  const title = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
+  document.title = r === 'painel' ? 'eKit · Preparação para emergências' : `${title} · eKit`;
   if (map && r !== 'mapa') { map.remove(); map = null; ui.mapView = null; }
   const draft = $('.chat-form input')?.value;
-  $('#main').innerHTML = ROUTES[r][2]();
+  $('#main').innerHTML = pageHead(r, title) + ROUTES[r][2]();
   if (r === 'mapa') initMap();
   if (r === 'chat') renderChatLog();
   if (draft) { const i = $('.chat-form input'); if (i) i.value = draft; }

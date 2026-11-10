@@ -3,12 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>eKit – Kit de Emergência</title>
-  <meta name="description" content="Verificação do kit de emergência, validades, contactos, grupos, pontos de encontro e alertas. Funciona offline.">
-  <meta name="theme-color" content="#0f4c81">
+  <title>eKit · Preparação para emergências</title>
+  <meta name="description" content="Ferramenta cívica e gratuita para preparar pessoas e famílias para emergências: kit de 72 horas, validades, pontos de encontro, avisos e comunicação de grupo. Funciona offline e protege a privacidade.">
+  <meta name="theme-color" content="#12325a">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="preload" href="vendor/fonts/source-sans-3-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="vendor/fonts/source-serif-4-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous" defer></script>
@@ -16,11 +18,34 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand"><img src="icon.svg" alt="" width="28" height="28"> <span>eKit</span> <span class="sep">/</span> <h1 id="title">Painel</h1></div>
-    <span id="net" class="offline" hidden>Offline</span>
+    <div class="top-inner">
+      <a class="brand" href="#/painel" aria-label="eKit, início">
+        <img src="icon.svg" alt="" width="34" height="34">
+        <span><span class="brand-name">eKit</span><span class="brand-tag">Preparação para emergências</span></span>
+      </a>
+      <span id="net" class="offline" hidden>Sem internet</span>
+      <a class="top-112" href="tel:112" aria-label="Ligar 112, número europeu de emergência">112</a>
+    </div>
   </header>
-  <nav id="nav" aria-label="Secções"></nav>
+  <nav aria-label="Secções"><div id="nav" class="nav-inner"></div></nav>
   <main id="main"></main>
+  <footer class="foot">
+    <div class="foot-grid">
+      <div>
+        <strong>eKit</strong>
+        <p>Ferramenta cívica e gratuita para ajudar pessoas e famílias a prepararem-se para emergências: kit de 72 horas, pontos de encontro e comunicação entre quem mais importa.</p>
+      </div>
+      <div>
+        <ul>
+          <li><a href="#/sobre">Sobre e princípios de utilização</a></li>
+          <li><a href="#/sobre">Privacidade e proteção de dados</a></li>
+          <li><a href="https://github.com/Deskwisesoft/ekit" target="_blank" rel="noopener">Código aberto</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="disclaimer"><strong>Em emergência, ligue 112.</strong> A eKit é uma iniciativa independente e não é um serviço oficial. Siga sempre as indicações das autoridades de proteção civil e dos serviços municipais.</p>
+    <p>Dados: IPMA · Município de Lisboa (CC0) · Município de Cascais (CC-BY) · © colaboradores OpenStreetMap</p>
+  </footer>
   <dialog id="dlg"></dialog>
   <input id="file" type="file" accept=".json,application/json" hidden>
   <div id="toast" role="status" aria-live="polite"></div>
