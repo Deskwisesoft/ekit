@@ -26,7 +26,8 @@ function seed() {
 const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes'];
 const MEMBER_FIELDS = ['name', 'phone', 'role', 'bitchat', 'needs', 'allergies', 'meds', 'blood', 'consentAt'];
 const HEALTH_FIELDS = ['needs', 'allergies', 'meds', 'blood'];
-const NAV_KEYS = ['painel', 'kit', 'mapa', 'alertas', 'contactos', 'grupos', 'guia', 'definicoes'];
+// Secções que podem ir para a barra: as 4 primeiras ficam no telemóvel, o resto vai para o Menu.
+const NAV_KEYS = ['painel', 'kit', 'mapa', 'alertas', 'contactos', 'grupos', 'guia'];
 const arr = v => (Array.isArray(v) ? v : []);
 const str = (v, max = 500) => (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, max);
 const num = (v, d = 0) => (v !== '' && v != null && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -1351,7 +1352,7 @@ function viewSettings() {
   </section>
   <section class="card">
     <h3>Ordem dos menus</h3>
-    <p class="muted small">As 4 primeiras ficam na barra inferior.</p>
+    <p class="muted small">No telemóvel, as 4 primeiras ficam na barra de baixo; as outras ficam no Menu.</p>
     <ol class="list nav-order">${navOrder().map((k, i, o) => `
       <li class="row ${i === 3 ? 'nav-cut' : ''}"><span class="cat-ic">${icon(ROUTES[k][1])}</span>
         <div class="row-main"><div class="row-title">${esc(ROUTES[k][0])}</div>${i < 4 ? '<div class="row-sub">Barra principal</div>' : ''}</div>
@@ -1686,7 +1687,7 @@ function viewChat() {
 }
 
 // ---------- Router e eventos ----------
-// [título, ícone, ecrã, nível] — nível 1: barra principal; 0: dentro de "Mais"; 2: o próprio "Mais"
+// [título, ícone, ecrã, nível, descrição]
 const ROUTES = {
   painel: ['Painel', 'home', viewDashboard, 1, 'Resumo da sua preparação e dos avisos'],
   kit: ['Kit de emergência', 'kit', viewKit, 1, '72 horas de autonomia para a sua casa.'],
@@ -1697,7 +1698,7 @@ const ROUTES = {
   guia: ['O que fazer', 'book', viewGuide, 0, 'Guias para cada situação e listas de verificação'],
   definicoes: ['Definições', 'settings', viewSettings, 0, 'Agregado, lembretes, dados'],
   sobre: ['Sobre e princípios', 'shield', viewAbout, 0, 'Missão, princípios, privacidade'],
-  mais: ['Mais', 'more', viewMore, 2, ''],
+  mais: ['Menu', 'more', viewMore, 2, ''],
 };
 ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Cifrado entre os membros.'];
 ROUTES.emergencia = ['Modo emergência', 'alert', viewEmergency, -1, 'O essencial, em poucos toques.'];
@@ -1714,7 +1715,7 @@ const route = () => {
   return ROUTES[r] && r !== 'chat' ? r : 'painel';
 };
 
-const NAV_SHORT = { kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre', guia: 'O que fazer', emergencia: 'Emergência', cartao: 'Cartão' };
+const NAV_SHORT = { kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre', guia: 'O que fazer', emergencia: 'Emergência', cartao: 'Cartão', mais: 'Menu' };
 
 function pageHead(r, title) {
   if (r === 'painel') {
@@ -1899,17 +1900,18 @@ function viewCard() {
   </section>`;
 }
 
+// Menu: tudo num só sítio, por ordem de importância.
 function viewMore() {
+  const link = ([k, t, ic, desc]) => `<li class="row"><a class="row-link" href="#/${k}">${icon(ic)}<div class="row-main"><div class="row-title">${esc(t)}</div><div class="row-sub">${esc(desc)}</div></div>${navBadge(k, navOrder())}<span class="chev" aria-hidden="true">›</span></a></li>`;
+  const block = (title, items) => `<section class="card"><h3>${title}</h3><ul class="list">${items.map(link).join('')}</ul></section>`;
+  const sec = k => [k, ROUTES[k][0], ROUTES[k][1], ROUTES[k][4]];
   return `<a class="sos-entry" href="#/emergencia">${icon('alert')} Modo emergência</a>
-  <section class="card"><ul class="list">${navOrder().slice(4).map(k => [k, ROUTES[k]]).map(([k, [t, ic, , , desc]]) => `
-    <li class="row"><a class="row-link" href="#/${k}">${icon(ic)}<div class="row-main"><div class="row-title">${t}</div><div class="row-sub">${desc}</div></div><span class="chev" aria-hidden="true">›</span></a></li>`).join('')}
-  </ul></section>
-  <section class="card"><ul class="list">${[['cartao', 'Cartão da família', 'users', 'Para imprimir e guardar no kit'], ['sobre', 'Sobre e princípios', 'shield', 'Missão, princípios, privacidade']].map(([k, t, ic, desc]) => `
-    <li class="row"><a class="row-link" href="#/${k}">${icon(ic)}<div class="row-main"><div class="row-title">${t}</div><div class="row-sub">${desc}</div></div><span class="chev" aria-hidden="true">›</span></a></li>`).join('')}
-  </ul></section>`;
+  ${block('Preparar', navOrder().slice(4).map(sec))}
+  ${block('Ter à mão', [['cartao', 'Cartão da família', 'users', 'Para imprimir e guardar no kit']])}
+  ${block('Aplicação', [sec('definicoes'), ['sobre', 'Sobre e privacidade', 'shield', 'Missão, princípios, dados']])}`;
 }
 
-// Contadores no menu: avisos graves (Avisos) e mensagens por ler (Grupos); somam-se em "Mais" se a secção lá estiver.
+// Contadores: avisos graves (Avisos) e mensagens por ler (Grupos); no telemóvel somam-se no Menu se a secção lá estiver.
 function navBadge(k, order) {
   const urgent = districtAlerts().filter(w => SEV[w.awarenessLevelID] >= 2).length;
   const msgs = unreadTotal();
@@ -1933,11 +1935,14 @@ function render() {
   const r = route();
   const urgent = districtAlerts().filter(w => SEV[w.awarenessLevelID] >= 2).length;
   const order = navOrder();
-  const inMore = !order.slice(0, 4).includes(r);
+  // Telemóvel: 4 secções + Menu. Computador: todas as secções + Menu (Definições, Sobre, Cartão).
+  const here = r === 'chat' ? 'grupos' : r;
+  const inMenuMobile = !order.slice(0, 4).includes(here);
+  const inMenuDesktop = !order.includes(here);
   $('#nav').innerHTML = [...order, 'mais'].map((k, i) => {
     const [t, ic] = ROUTES[k];
-    const current = k === r || (k === 'mais' && inMore);
-    const cls = k === 'mais' ? 'more' : i < 4 ? 'pri' : 'sec';
+    const current = k === here || (k === 'mais' && inMenuDesktop);
+    const cls = k === 'mais' ? `more${inMenuMobile ? ' cur-m' : ''}` : i < 4 ? 'pri' : 'sec';
     return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${navBadge(k, order)}</a>`;
   }).join('');
   const title = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];

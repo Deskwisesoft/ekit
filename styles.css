@@ -71,7 +71,8 @@ nav a {
 }
 nav a:hover { color: var(--text); }
 nav a[aria-current] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
-nav a.more { display: none; }
+nav a.more { margin-left: auto; }
+nav a.more .dot-count { display: none; }
 .dot-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--danger); color: var(--danger-ink); font-size: .72rem; line-height: 18px; text-align: center; font-weight: 700; }
 
 @media (max-width: 767px) {
@@ -80,7 +81,9 @@ nav a.more { display: none; }
   nav { position: fixed; top: auto; bottom: 0; left: 0; right: 0; border-top: 1px solid var(--line); border-bottom: 0; }
   .nav-inner { display: grid; grid-template-columns: repeat(5, 1fr); padding: 0 0 env(safe-area-inset-bottom); }
   nav a.sec { display: none; }
-  nav a.more { display: flex; }
+  nav a.more { display: flex; margin-left: 0; }
+  nav a.more .dot-count { display: block; }
+  nav a.more.cur-m { color: var(--accent); border-top-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
   nav a { flex-direction: column; justify-content: center; gap: 2px; min-height: 60px; padding: 4px 2px; font-size: .74rem; border-bottom: 0; border-top: 3px solid transparent; }
   nav a .ic { width: 24px; height: 24px; }
   nav a[aria-current] { border-top-color: var(--accent); background: var(--accent-soft); }
