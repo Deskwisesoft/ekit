@@ -95,6 +95,19 @@ export const GUIDES = [
     'Poupe a bateria do telemóvel: modo de poupança, só chamadas essenciais.',
     'Desligue aparelhos sensíveis para evitar danos no regresso da corrente.',
   ] },
+  { id: 'vento', icon: '🌬', title: 'Vento forte e tempestade', steps: [
+    'Recolha ou prenda vasos, toldos e objetos soltos em varandas e quintais.',
+    'Afaste-se de árvores, andaimes, muros, postes e estruturas que possam cair.',
+    'Adie viagens que não sejam essenciais e evite a orla costeira.',
+    'Em casa, feche janelas e estores e afaste-se dos vidros.',
+    'Se faltar a luz, use lanternas e siga o guia "Falha de energia".',
+  ] },
+  { id: 'chuva', icon: '🌧', title: 'Chuva forte e trovoada', steps: [
+    'Não atravesse ruas ou estradas com água a correr, nem a pé nem de carro.',
+    'Afaste-se de rios, ribeiras, túneis e passagens inferiores.',
+    'Durante a trovoada, fique dentro de casa, longe de janelas, e desligue aparelhos da tomada.',
+    'Se a água começar a entrar, desligue a eletricidade se for seguro e suba para um piso superior com o kit.',
+  ] },
   { id: 'calor', icon: '☀️', title: 'Onda de calor', steps: [
     'Beba água regularmente, mesmo sem sede.',
     'Evite exposição ao sol entre as 11h e as 17h.',
@@ -113,7 +126,7 @@ export const GUIDES = [
     'Se não conseguir sair, suba aos pisos mais altos de um edifício resistente.',
     'Podem vir várias ondas durante horas. Só regresse quando as autoridades indicarem.',
   ] },
-  { id: 'telemovel', icon: '📱', title: 'Preparar o telemóvel (fazer já)', steps: [
+  { id: 'telemovel', prep: true, icon: '📱', title: 'Preparar o telemóvel', steps: [
     'Ative os alertas de emergência. iPhone: Definições › Notificações › Alertas de emergência. Android: Definições › Segurança e emergência › Alertas de emergência sem fios.',
     'Preencha a ficha médica e mostre-a no ecrã bloqueado. iPhone: app Saúde › Ficha médica. Android: Segurança e emergência › Informações médicas.',
     'Adicione contactos de emergência na ficha médica: os socorristas veem-nos sem desbloquear o telemóvel.',
@@ -127,6 +140,22 @@ export const GUIDES = [
     'Informe o seu grupo do local para onde vai.',
   ] },
 ];
+
+// Simulacro: um ensaio do plano com a família (de 6 em 6 meses).
+GUIDES.push({ id: 'simulacro', prep: true, icon: '🚶', title: 'Simulacro com a família', steps: [
+  'Combinem um dia e uma hora com todos os que vivem consigo.',
+  'Cada um sai de onde estiver e vai pelo seu caminho até ao ponto de encontro.',
+  'Contem quanto tempo demoraram e onde alguém teve dúvidas.',
+  'Confirmem o ponto alternativo, para o caso de o principal estar inacessível.',
+  'Revejam juntos o kit e os contactos.',
+] });
+
+// Avisos do IPMA → guia sugerido no modo emergência.
+export const ALERT_GUIDES = { 'Vento': 'vento', 'Agitação Marítima': 'vento', 'Precipitação': 'chuva', 'Trovoada': 'chuva', 'Tempo Quente': 'calor' };
+
+// Os 10 essenciais do kit (aparecem primeiro).
+export const ESSENTIALS = ['Água potável', 'Comida não perecível', 'Kit de primeiros socorros', 'Medicação habitual', 'Lanterna',
+  'Pilhas extra', 'Rádio a pilhas', 'Powerbank', 'Cópias de documentos', 'Dinheiro em numerário'];
 
 // Áreas de aviso do IPMA (distritos / regiões)
 export const IPMA_AREAS = {

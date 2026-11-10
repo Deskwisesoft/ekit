@@ -1,7 +1,7 @@
 import {
   CATEGORIES, DEFAULT_KIT, EMERGENCY_NUMBERS, DEFAULT_LISTS, GUIDES,
   IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL, DISTRICT_CAPITALS, OVERPASS_URLS, SEISMIC_URL,
-  RADIO_A1, RADIO_SOURCE, FIRE_RISK_URL, FIRE_LEVELS,
+  RADIO_A1, RADIO_SOURCE, FIRE_RISK_URL, FIRE_LEVELS, ALERT_GUIDES, ESSENTIALS,
 } from './data.js';
 import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS, publishInvite, fetchInvite, newInviteCode, normalizeCode } from './chat.js';
 const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
@@ -29,7 +29,8 @@ const MEMBER_FIELDS = ['name', 'phone', 'role', 'bitchat', 'needs', 'allergies',
 const HEALTH_FIELDS = ['needs', 'allergies', 'meds', 'blood'];
 // As 4 primeiras ficam na barra (telemóvel e computador); as outras estão no Menu.
 // "Preparar" e "Avisos" já se abrem a partir do Início, por isso não ocupam a barra.
-const NAV_KEYS = ['painel', 'kit', 'grupos', 'mapa', 'preparar', 'alertas', 'contactos', 'guia'];
+const NAV_KEYS = ['painel', 'preparar', 'grupos', 'kit', 'mapa', 'alertas', 'contactos', 'guia'];
+const BAR = 3; // quantas secções ficam na barra; as outras estão no Menu
 const arr = v => (Array.isArray(v) ? v : []);
 const str = (v, max = 500) => (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, max);
 const num = (v, d = 0) => (v !== '' && v != null && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -223,6 +224,14 @@ function locate(then) {
   );
 }
 
+function locateQuiet(ok, fail) {
+  if (!navigator.geolocation) return fail('Este dispositivo não indica a localização. Escolha no mapa.');
+  navigator.geolocation.getCurrentPosition(
+    p => { ui.pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }; onPosition(ui.pos); ok(ui.pos); },
+    e => fail(e.code === 1 ? 'A localização foi recusada. Escolha no mapa.' : 'Não foi possível obter a localização. Escolha no mapa.'),
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 },
+  );
+}
 // A posição fica só neste dispositivo. Serve para o ponto mais próximo e para os avisos da zona.
 function onPosition(p) {
   S.lastPos = { lat: +p.lat.toFixed(5), lng: +p.lng.toFixed(5), at: Date.now() };
@@ -705,13 +714,15 @@ const ICONS = {
   wifioff: '<path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.8M19 12.9a10 10 0 0 0-2.3-1.6M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.7 5M12 20h.01"/>',
   paw: '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.05Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  wind: '<path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h8"/>',
   circle: '<circle cx="12" cy="12" r="9"/>',
   checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
   radio: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8 17 3"/><circle cx="8" cy="14" r="2"/><path d="M14 12h4M14 16h4"/>',
   star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
 };
 const CAT_ICONS = { agua: 'drop', saude: 'health', energia: 'bolt', docs: 'doc', abrigo: 'tool', outros: 'box' };
-const GUIDE_ICONS = { sismo: 'quake', inundacao: 'wave', tsunami: 'wave', incendio: 'flame', apagao: 'bolt', calor: 'sun', abrigo: 'home', evacuacao: 'route', telemovel: 'phone' };
+const GUIDE_ICONS = { sismo: 'quake', inundacao: 'wave', tsunami: 'wave', vento: 'wind', chuva: 'drop', incendio: 'flame', apagao: 'bolt', calor: 'sun', abrigo: 'home', evacuacao: 'route', telemovel: 'phone', simulacro: 'route' };
 const catIcon = id => `<span class="cat-ic">${icon(CAT_ICONS[id] || 'box')}</span>`;
 const icon = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -721,12 +732,10 @@ function fieldHTML(f, v) {
   const req = f.required ? 'required' : '';
   switch (f.type) {
     case 'info': return `<p class="muted">${f.html}</p>`;
-    case 'geo': return `<label>Coordenadas GPS (latitude, longitude)</label>
-      <div class="geo">
-        <input name="lat" inputmode="decimal" placeholder="38.72225" value="${esc(v?.lat)}" aria-label="Latitude">
-        <input name="lng" inputmode="decimal" placeholder="-9.13934" value="${esc(v?.lng)}" aria-label="Longitude">
-        <button type="button" class="btn" data-here>Usar a minha posição</button>
-      </div>`;
+    case 'geo': return `<label>Local no mapa</label>
+      <input type="hidden" name="lat" value="${esc(v?.lat)}"><input type="hidden" name="lng" value="${esc(v?.lng)}">
+      <p class="muted small" data-geotxt>${hasCoords(v) ? fmtCoords(v) : 'Ainda sem local no mapa.'}</p>
+      <div class="grid-buttons"><button type="button" class="btn" data-pick>${icon('map')} Escolher no mapa</button><button type="button" class="btn" data-here>${icon('pin')} Usar a minha posição</button></div>`;
     case 'checkbox': return `<label class="check"><input type="checkbox" name="${f.k}" ${v ? 'checked' : ''}> ${esc(f.label)}</label>`;
     case 'select': return `<label for="${id}">${esc(f.label)}</label><select id="${id}" name="${f.k}">${f.options.map(([val, txt]) => `<option value="${esc(val)}" ${val === v ? 'selected' : ''}>${esc(txt)}</option>`).join('')}</select>`;
     case 'textarea': return `<label for="${id}">${esc(f.label)}</label><textarea id="${id}" name="${f.k}" rows="3" ${req}>${esc(v)}</textarea>`;
@@ -769,9 +778,14 @@ function openForm({ title, fields, values = {}, onSave, onDelete, submitLabel = 
     if ((await onSave(v)) !== false) { d.close(); save(); render(); }
   };
   d.querySelector('[data-cancel]').onclick = () => d.close();
-  const setGeo = p => { form.elements.lat.value = p.lat.toFixed(6); form.elements.lng.value = p.lng.toFixed(6); };
+  const setGeo = p => {
+    form.elements.lat.value = Number(p.lat).toFixed(6); form.elements.lng.value = Number(p.lng).toFixed(6);
+    const t = d.querySelector('[data-geotxt]'); if (t) t.textContent = 'Local escolhido: ' + fmtCoords(p);
+  };
   const here = d.querySelector('[data-here]');
-  if (here) here.onclick = () => { here.textContent = '…'; locate(p => { setGeo(p); here.textContent = 'Usar a minha posição'; }); };
+  if (here) here.onclick = () => { const t = here.innerHTML; here.textContent = 'A obter…'; locateQuiet(p => { setGeo(p); here.innerHTML = t; }, msg => { toast(msg); here.innerHTML = t; }); };
+  const pick = d.querySelector('[data-pick]');
+  if (pick) pick.onclick = () => pickOnMap({ lat: form.elements.lat.value === '' ? '' : Number(form.elements.lat.value), lng: form.elements.lng.value === '' ? '' : Number(form.elements.lng.value) }, setGeo);
   const off = form.elements.official;
   if (off) off.onchange = () => {
     const p = POINTS[off.value];
@@ -796,6 +810,8 @@ function nowRows() {
     const [lvl, cls] = LEVELS[w.awarenessLevelID];
     rows.push([cls, 'alert', `${w.awarenessTypeName} · aviso ${lvl.toLowerCase()}`, alertWhen(w), '#/alertas']);
   });
+  const nAl = districtAlerts().length;
+  if (nAl > 2) rows.push(['', 'alert', `Mais ${nAl - 2} aviso${nAl - 2 === 1 ? '' : 's'}`, 'Ver todos os avisos', '#/alertas']);
   const fr = fireRiskHere();
   if (fr && fr.today >= 3) rows.push([fr.today >= 4 ? 'bad' : 'warn', 'flame', `Risco de incêndio ${FIRE_LEVELS[fr.today].toLowerCase()}`, 'Hoje · sem queimadas nem fogo', '#/alertas']);
   if (!rows.length) rows.push(['good', 'check', 'Sem avisos', S.alertsCache?.at ? 'Atualizado ' + new Date(S.alertsCache.at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }) : 'Abra com internet para atualizar', '#/alertas']);
@@ -809,7 +825,7 @@ function viewDashboard() {
     ? `<a class="now-row" href="#/mapa">${icon('pin')}<span class="now-t"><strong>${esc(g.meetingPoint || fmtCoords(g))}</strong><small>Ponto de encontro${pos && hasCoords(g) ? ' · ' + fmtDist(distanceKm(pos, g)) : ''}</small></span><span class="chev" aria-hidden="true">›</span></a>`
     : near && near.d <= 25
       ? `<a class="now-row" href="#/mapa">${icon('pin')}<span class="now-t"><strong>${esc(near.p.n)}</strong><small>Ponto oficial mais próximo · ${fmtDist(near.d)}</small></span><span class="chev" aria-hidden="true">›</span></a>`
-      : `<a class="now-row" href="#/grupos">${icon('pin')}<span class="now-t"><strong>Definir ponto de encontro</strong><small>Onde a família se encontra</small></span><span class="chev" aria-hidden="true">›</span></a>`;
+      : `<a class="now-row" href="#/preparar" data-act="wizard" data-v="2">${icon('pin')}<span class="now-t"><strong>Definir ponto de encontro</strong><small>Onde a família se encontra</small></span><span class="chev" aria-hidden="true">›</span></a>`;
   return `
   <a class="door sos" href="#/emergencia">${icon('alert')}<span class="door-t"><strong>Há uma emergência</strong><small>Avisar a família, para onde ir, o que fazer</small></span><span class="chev" aria-hidden="true">›</span></a>
   <a class="door" href="#/preparar">${icon('list')}<span class="door-t"><strong>Preparar-me</strong><small>${done === steps.length ? 'Plano completo' : `${done} de ${steps.length} passos feitos`}</small>
@@ -827,41 +843,28 @@ function planSteps() {
   const st = stats(), drillOk = S.settings.lastDrill && Date.now() - S.settings.lastDrill < 182 * 864e5;
   const people = S.groups.reduce((n, g) => n + liveMembers(g).length, 0);
   const g = S.groups.find(x => x.meetingPoint || hasCoords(x));
+  const ess = S.kit.filter(isEssential), essOk = ess.filter(hasItem).length;
   return [
-    { t: 'Família e contactos', done: people > 1 || S.contacts.length > 0, sub: people ? `${people} pessoa(s) no grupo` : 'Quem contactar e com quem se encontrar', href: '#/grupos' },
-    { t: 'Ponto de encontro', done: !!g, sub: g ? (g.meetingPoint || fmtCoords(g)) : 'Onde a família se encontra', href: '#/grupos' },
-    { t: 'Kit de 72 horas', done: st.pct === 100, sub: st.pct === 100 ? 'Completo' : `${st.pct}% · ${st.missing} em falta`, href: '#/kit' },
-    { t: 'Telemóvel preparado', done: !!S.settings.phoneReady, sub: 'Alertas de emergência e ficha médica', href: '#/guia', act: 'phoneReady', actLabel: 'Já fiz' },
+    { t: 'A sua família', done: S.groups.length > 0 && (people > 1 || S.contacts.length > 0 || S.settings.household === 1), sub: people ? `${people} pessoa(s)` : 'Quem vive consigo', ...(S.groups.length ? { href: '#/grupos' } : { act: 'wizard', v: 1 }) },
+    { t: 'Ponto de encontro', done: !!g, sub: g ? (g.meetingPoint || fmtCoords(g)) : 'Onde a família se encontra', ...(S.groups[0] ? (g ? { href: '#/grupos' } : { act: 'editMeetMain', id: S.groups[0].id }) : { act: 'wizard', v: 2 }) },
+    { t: 'Kit de 72 horas', done: essOk === ess.length && ess.length > 0, sub: `Essenciais: ${essOk} de ${ess.length}`, href: '#/kit' },
+    { t: 'Telemóvel preparado', done: !!S.settings.phoneReady, sub: 'Alertas de emergência e ficha médica', href: '#/agir/telemovel' },
     { t: 'Mapa sem internet', done: !!S.settings.mapSaved, sub: S.settings.mapSaved ? 'Guardado' : 'Guardar a zona de casa e do ponto', href: '#/mapa' },
-    { t: 'Simulacro com a família', done: !!drillOk, sub: drillOk ? 'Feito em ' + new Date(S.settings.lastDrill).toLocaleDateString('pt-PT') : 'Ir juntos ao ponto de encontro', act: 'drillDone', actLabel: 'Fizemos hoje' },
+    { t: 'Simulacro com a família', done: !!drillOk, sub: drillOk ? 'Feito em ' + new Date(S.settings.lastDrill).toLocaleDateString('pt-PT') : 'Ir juntos ao ponto de encontro', href: '#/agir/simulacro' },
   ];
 }
 function viewPrepare() {
   const st = stats(), steps = planSteps(), done = steps.filter(x => x.done).length;
-  const people = S.groups.reduce((n, g) => n + liveMembers(g).length, 0), pets = S.groups.reduce((n, g) => n + livePets(g).length, 0);
-  const alerts = districtAlerts().length, g = S.groups.find(x => hasCoords(x)), pos = myPos();
-  const tiles = [
-    ['#/kit', 'kit', 'Kit', `${st.pct}%${st.missing ? ' · faltam ' + st.missing : ''}`, st.pct < 100 ? 'warn' : 'good'],
-    ['#/grupos', 'users', 'Família', people ? `${people} pessoa(s)${pets ? ' · ' + pets + ' animal(is)' : ''}` : 'Criar grupo', ''],
-    ['#/mapa', 'map', 'Mapa', g && pos ? fmtDist(distanceKm(pos, g)) + ' do ponto' : 'Pontos de encontro', ''],
-    ['#/alertas', 'alert', 'Avisos', alerts ? `${alerts} ativo(s)` : 'Sem avisos', alerts ? 'bad' : ''],
-    ['#/contactos', 'phone', 'Contactos', 'Números úteis', ''],
-    ['#/guia', 'book', 'O que fazer', 'Guias e listas', ''],
-    ['#/cartao', 'list', 'Cartão', 'Para imprimir', ''],
-    ['#/definicoes', 'radio', 'Rádio', (RADIO_A1[S.settings.district] || '').split(' · ')[0], ''],
-  ];
+  const next = steps.find(x => !x.done);
+  const link = x => x.href ? `href="${x.href}"` : `href="#/preparar" data-act="${x.act}" ${x.v ? `data-v="${x.v}"` : ''} ${x.id ? `data-id="${x.id}"` : ''}`;
   return `
   <section class="card">
     <h3>O seu plano · ${done} de ${steps.length}</h3>
     <span class="bar big"><i style="width:${Math.round((done / steps.length) * 100)}%"></i></span>
+    ${next ? `<a class="door next-step" ${link(next)}>${icon('arrow')}<span class="door-t"><strong>${esc(next.t)}</strong><small>Próximo passo · ${esc(next.sub)}</small></span><span class="chev" aria-hidden="true">›</span></a>` : '<p class="note">Plano completo. Reveja-o de 6 em 6 meses.</p>'}
     <ol class="steps">${steps.map(x => `<li class="step ${x.done ? 'done' : ''}">
-      ${x.href ? `<a class="step-main" href="${x.href}">` : '<div class="step-main">'}${icon(x.done ? 'checkCircle' : 'circle')}
-        <span class="now-t"><strong>${esc(x.t)}</strong><small>${esc(x.sub)}</small></span>${x.href ? '<span class="chev" aria-hidden="true">›</span></a>' : '</div>'}
-      ${!x.done && x.act ? `<button class="btn sm" data-act="${x.act}">${esc(x.actLabel)}</button>` : ''}</li>`).join('')}</ol>
-  </section>
-  <section class="card">
-    <h3>Tudo</h3>
-    <div class="tiles">${tiles.map(([href, ic, t, sub, cls]) => `<a class="tile ${cls}" href="${href}">${icon(ic)}<strong>${esc(t)}</strong><small>${esc(sub)}</small></a>`).join('')}</div>
+      <a class="step-main" ${link(x)}>${icon(x.done ? 'checkCircle' : 'circle')}
+        <span class="now-t"><strong>${esc(x.t)}</strong><small>${esc(x.sub)}</small></span><span class="chev" aria-hidden="true">›</span></a></li>`).join('')}</ol>
   </section>
   ${st.exp.length ? `<section class="card">
     <h3>A expirar</h3>
@@ -878,46 +881,48 @@ function backupNote() {
   return `<p class="note small">${S.settings.lastBackup ? 'A última cópia de segurança tem mais de 3 meses.' : 'Ainda não fez cópia de segurança. Se perder o telemóvel, perde o plano.'} <a href="#/definicoes">Exportar →</a></p>`;
 }
 
+const isEssential = i => ESSENTIALS.some(k => i.name.startsWith(k));
+const hasItem = i => (need(i) > 0 ? isOk(i) : i.have > 0);
 function viewKit() {
   const f = ui.kitFilter, st = stats();
   const show = i => f === 'all' || (f === 'missing' && need(i) > 0 && !isOk(i)) || (f === 'expiring' && ['warn', 'bad'].includes(expiryState(i)?.cls));
   const filters = [['all', 'Tudo'], ['missing', `Em falta${st.missing ? ' (' + st.missing + ')' : ''}`], ['expiring', 'Validade']];
+  const ess = S.kit.filter(isEssential), rest = S.kit.filter(i => !isEssential(i));
+  const essOk = ess.filter(hasItem).length, essShow = ess.filter(show);
+  const restShow = rest.filter(show), restMiss = rest.filter(i => need(i) > 0 && !isOk(i)).length;
   return `
   <section class="card hero">
     <div class="ring" style="--p:${st.pct}"><span>${st.pct}%</span></div>
     <div class="hero-body">
-      <h2>${st.pct === 100 ? 'Kit completo' : `Faltam ${st.missing} coisa${st.missing === 1 ? '' : 's'}`}</h2>
-      <p class="muted">Para ${S.settings.household} pessoa(s) durante 72 horas · <a href="#/definicoes">alterar</a></p>
+      <h2>${essOk === ess.length && ess.length ? 'Essenciais completos' : `Essenciais: ${essOk} de ${ess.length}`}</h2>
+      <p class="muted">${st.missing ? `Faltam ${st.missing} coisas no total` : 'Kit completo'} · para ${S.settings.household} pessoa(s), 72 horas · <a href="#/definicoes">alterar</a></p>
       ${st.expired || st.expiring ? `<p class="small"><span class="badge ${st.expired ? 'bad' : 'warn'}">${st.expired ? st.expired + ' expirado(s)' : st.expiring + ' a expirar'}</span></p>` : ''}
     </div>
   </section>
+  <p class="muted small kit-help">Toque em <strong>Tenho</strong> quando já tiver a coisa em casa. Toque no nome para mudar a quantidade ou a validade.</p>
   <div class="toolbar">
     <div class="seg">${filters.map(([k, t]) => `<button class="${f === k ? 'on' : ''}" data-act="kitFilter" data-v="${k}">${t}</button>`).join('')}</div>
-    <span class="spacer"></span><button class="btn" data-act="addItem">+ Item</button>
+    <span class="spacer"></span><button class="btn" data-act="addItem">+ Coisa</button>
   </div>
-  ${CATEGORIES.map(c => {
-    const all = S.kit.filter(i => i.cat === c.id), items = all.filter(show);
-    if (!items.length) return '';
-    const miss = all.filter(i => need(i) > 0 && !isOk(i)).length, key = 'cat-' + c.id;
-    return `<details class="card fold" data-fold="${key}" ${isOpen(key, f !== 'all' || miss > 0) ? 'open' : ''}>
-      <summary>${catIcon(c.id)}<span class="fold-t">${esc(c.name)}</span><span class="count ${miss ? 'warn' : 'good'}">${miss ? miss + ' em falta' : 'completo'}</span></summary>
-      <ul class="list">${items.map(kitRow).join('')}</ul></details>`;
-  }).join('') || '<p class="empty">Nada neste filtro.</p>'}`;
+  ${essShow.length ? `<details class="card fold" data-fold="kit-ess" ${isOpen('kit-ess', true) ? 'open' : ''}>
+    <summary>${icon('star')}<span class="fold-t">Os ${ess.length} essenciais</span><span class="count ${essOk === ess.length ? 'good' : 'warn'}">${essOk}/${ess.length}</span></summary>
+    <ul class="list">${essShow.map(kitRow).join('')}</ul></details>` : ''}
+  ${restShow.length ? `<details class="card fold" data-fold="kit-rest" ${isOpen('kit-rest', f !== 'all') ? 'open' : ''}>
+    <summary>${icon('kit')}<span class="fold-t">Mais coisas úteis</span><span class="count ${restMiss ? '' : 'good'}">${restMiss ? restMiss + ' em falta' : 'completo'}</span></summary>
+    ${CATEGORIES.map(c => { const it = restShow.filter(i => i.cat === c.id); return it.length ? `<h4 class="sub-h">${catIcon(c.id)} ${esc(c.name)}</h4><ul class="list">${it.map(kitRow).join('')}</ul>` : ''; }).join('')}
+  </details>` : ''}
+  ${!essShow.length && !restShow.length ? '<p class="empty">Nada neste filtro.</p>' : ''}`;
 }
 function kitRow(i) {
-  const n = need(i), ok = isOk(i), e = expiryState(i);
-  const meta = [n > 0 ? `Tenho ${i.have} de ${n} ${esc(i.unit)}` : 'Opcional', i.location && 'Em: ' + esc(i.location)].filter(Boolean).join(' · ');
+  const n = need(i), ok = hasItem(i), e = expiryState(i);
+  const sub = ok ? `Tenho${i.location ? ' · em ' + esc(i.location) : ''}`
+    : n > 0 ? (i.unit === 'dias' ? `Falta para ${n} dias` : `Falta ${i.have ? `${+(n - i.have).toFixed(2)} de ${n}` : n} ${esc(i.unit)}`) : 'Opcional';
   return `<li class="row kit-row ${ok ? 'done' : ''}">
-    <button class="tick" data-act="fill" data-id="${i.id}" aria-label="Marcar como completo">${ok ? '✓' : ''}</button>
     <div class="row-main" data-act="editItem" data-id="${i.id}">
       <div class="row-title">${esc(i.name)}</div>
-      <div class="row-sub">${meta}${e ? ` <span class="badge ${e.cls}">${esc(e.label)}</span>` : (i.expires && !ok ? ' · <span class="small">validade por definir</span>' : '')}</div>
+      <div class="row-sub">${sub}${e ? ` <span class="badge ${e.cls}">${esc(e.label)}</span>` : ''}</div>
     </div>
-    <div class="stepper">
-      <button data-act="dec" data-id="${i.id}" aria-label="Menos">−</button>
-      <span>${i.have}</span>
-      <button data-act="inc" data-id="${i.id}" aria-label="Mais">+</button>
-    </div>
+    <button class="have-btn ${ok ? 'on' : ''}" data-act="fill" data-id="${i.id}" aria-pressed="${ok}" aria-label="${ok ? 'Já tenho' : 'Marcar que tenho'}: ${esc(i.name)}">${ok ? '✓ Tenho' : 'Tenho'}</button>
   </li>`;
 }
 function itemForm(item) {
@@ -996,20 +1001,22 @@ function contactForm(c) {
 
 function viewGroups() {
   return `
-  <div class="toolbar">
-    <button class="btn primary" data-act="addGroup">+ Novo grupo</button>
-    <button class="btn" data-act="joinGroup">Entrar com código</button>
-    <span class="spacer"></span>
-    <a class="btn ghost" href="#/cartao">${icon('list')} Cartão para imprimir</a>
-  </div>
+  ${S.groups.length ? '' : `<section class="card">
+    <h3>Comece pela sua família</h3>
+    <p class="muted">Quem vive consigo e onde se encontram. Demora um minuto.</p>
+    <div class="grid-buttons"><button class="btn primary" data-act="wizard" data-v="1">Começar</button><button class="btn" data-act="joinGroup">Tenho um código</button></div>
+  </section>`}
   ${S.groups.length ? S.groups.map(g => `
     <section class="card">
-      <div class="group-head"><h2>${esc(g.name)}</h2>${syncBadge(g)}</div>
-      <div class="grid-buttons g3">
+      <div class="group-head"><h2>${esc(g.name)}</h2>${isShared(g) ? syncBadge(g) : ''}</div>
+      ${isShared(g) ? `<div class="grid-buttons g3">
         <a class="btn" href="#/chat/${g.id}">${icon('chat')} Chat${countBadge(unread(g.id), 'mensagens por ler')}</a>
         <button class="btn" data-act="shareGroup" data-id="${g.id}">${icon('share')} Convidar</button>
         <button class="btn" data-act="editGroup" data-id="${g.id}">${icon('settings')} Editar</button>
-      </div>
+      </div>` : `<div class="grid-buttons">
+        <button class="btn primary" data-act="shareGroup" data-id="${g.id}">${icon('share')} Partilhar com a família</button>
+        <button class="btn" data-act="editGroup" data-id="${g.id}">${icon('settings')} Editar</button>
+      </div>`}
       <h4 class="sub-h">${icon('pin')} Pontos de encontro</h4>
       <div class="meet">${icon('pin')}<div class="meet-body">
         <div class="meet-head"><span class="muted small">Ponto de encontro principal</span>
@@ -1023,7 +1030,6 @@ function viewGroups() {
         ${hasCoords(x) ? `<div class="mono small muted">${fmtCoords(x)}</div>${navLinks(x, x.name)}` : ''}</div></div>`).join('')}
       <button class="btn ghost" data-act="addMeet" data-id="${g.id}">${icon('pin')} + Ponto alternativo</button>
       ${g.notes ? `<p class="muted">${esc(g.notes)}</p>` : ''}
-      ${g.chat && !g.sharedAt && !g.imported ? '<p class="note">Carregue em <strong>Convidar</strong> para dar o código à família. Assim todos veem o mesmo.</p>' : ''}
       <h4 class="sub-h">${icon('users')} Pessoas${liveMembers(g).length ? ' · ' + liveMembers(g).length : ''}</h4>
       ${liveMembers(g).length ? '' : '<p class="muted small">Ainda sem pessoas.</p>'}
       <ul class="list">${liveMembers(g).map(m => `
@@ -1044,7 +1050,12 @@ function viewGroups() {
       }).join('')}</ul>` : ''}
       <button class="btn ghost" data-act="addPet" data-id="${g.id}">${icon('paw')} + Animal</button>
     </section>`).join('')
-    : '<p class="empty">Crie um grupo para a família, vizinhos, condomínio ou equipa de trabalho.</p>'}`;
+    : ''}
+  ${S.groups.length ? `<details class="card fold" data-fold="more-groups" ${isOpen('more-groups', false) ? 'open' : ''}>
+    <summary>${icon('users')}<span class="fold-t">Outros grupos e partilha</span></summary>
+    <p class="muted small">Vizinhos, condomínio ou trabalho: cada grupo tem o seu código.</p>
+    <div class="grid-buttons"><button class="btn" data-act="addGroup">+ Novo grupo</button><button class="btn" data-act="joinGroup">Entrar com código</button><a class="btn" href="#/cartao">Cartão para imprimir</a></div>
+  </details>` : ''}`;
 }
 function groupForm(g, defaults) {
   openForm({
@@ -1078,7 +1089,7 @@ function groupForm(g, defaults) {
     onDelete: g && (() => { S.groups = S.groups.filter(x => x !== g); delete (S.chat || {})[g.id]; startHub(); }),
   });
 }
-const officialField = () => (POINTS.length ? [{ k: 'official', label: 'Usar um ponto oficial (opcional)', type: 'select',
+const officialField = () => (POINTS.length ? [{ k: 'official', more: 'Escolher da lista de pontos oficiais', label: 'Ponto oficial', type: 'select',
   options: [['', '— escolher —'], ...POINTS.map((p, i) => [String(i), `${p.m} · ${p.n}${p.t === 'Tsunami' ? ' (tsunami)' : ''}`])] }] : []);
 
 // Ponto principal: qualquer membro pode alterar; sincroniza para todos.
@@ -1466,10 +1477,10 @@ function viewSettings() {
   </section>
   <details class="card fold" data-fold="set-nav" ${isOpen('set-nav', false) ? 'open' : ''}>
     <summary>${icon('list')}<span class="fold-t">Ordem dos menus</span></summary>
-    <p class="muted small">As 4 primeiras ficam na barra; as outras ficam no Menu.</p>
+    <p class="muted small">As 3 primeiras ficam na barra; as outras ficam no Menu.</p>
     <ol class="list nav-order">${navOrder().map((k, i, o) => `
-      <li class="row ${i === 3 ? 'nav-cut' : ''}"><span class="cat-ic">${icon(ROUTES[k][1])}</span>
-        <div class="row-main"><div class="row-title">${esc(ROUTES[k][0])}</div>${i < 4 ? '<div class="row-sub">Barra principal</div>' : ''}</div>
+      <li class="row ${i === BAR - 1 ? 'nav-cut' : ''}"><span class="cat-ic">${icon(ROUTES[k][1])}</span>
+        <div class="row-main"><div class="row-title">${esc(ROUTES[k][0])}</div>${i < BAR ? '<div class="row-sub">Barra principal</div>' : ''}</div>
         <button class="btn sm" data-act="navUp" data-k="${k}" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${esc(ROUTES[k][0])}">↑</button>
         <button class="btn sm" data-act="navDown" data-k="${k}" ${i === o.length - 1 ? 'disabled' : ''} aria-label="Descer ${esc(ROUTES[k][0])}">↓</button>
       </li>`).join('')}</ol>
@@ -1720,6 +1731,8 @@ function renderChatLog() {
   }
 }
 
+// Um grupo só é "partilhado" quando há mais alguém com a app (ou já foi convidado alguém).
+const isShared = g => !!(g.sharedAt || g.imported || liveMembers(g).filter(m => m.pk).length > 1 || (S.chat?.[g.id] || []).length);
 function syncBadge(g) {
   if (!g.chat) return '<span class="badge">a preparar…</span>';
   if (g.syncPending) return `<span class="badge warn">${navigator.onLine ? 'a sincronizar…' : 'por sincronizar'}</span>`;
@@ -1919,16 +1932,16 @@ function statusRecipients() {
   return allMembers().filter(m => m.phone && !(me && m.pk === me)).map(m => m.phone.replace(/[^\d+]/g, '')).filter(p => p && !seen.has(p) && seen.add(p));
 }
 function smsHref(nums, body) {
-  const b = encodeURIComponent(body);
-  return /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document
-    ? `sms:/open?addresses=${nums.join(',')}&body=${b}` : `sms:${nums.join(',')}?body=${b}`;
+  const b = encodeURIComponent(body), ios = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document;
+  if (!nums.length) return ios ? `sms:&body=${b}` : `sms:?body=${b}`; // a pessoa escolhe a quem enviar
+  return ios ? `sms:/open?addresses=${nums.join(',')}&body=${b}` : `sms:${nums.join(',')}?body=${b}`;
 }
 function statusText(help) {
   const pos = myPos(), g = S.groups.find(x => x.meetingPoint || hasCoords(x));
   const time = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
   return [
-    `eKit: ${help ? 'PRECISO DE AJUDA' : 'Estou bem'}${S.settings.myName ? ' (' + S.settings.myName + ')' : ''}. ${time}.`,
-    pos ? `Estou em ${pos.lat.toFixed(5)},${pos.lng.toFixed(5)} https://www.openstreetmap.org/?mlat=${pos.lat.toFixed(5)}&mlon=${pos.lng.toFixed(5)}#map=17/${pos.lat.toFixed(5)}/${pos.lng.toFixed(5)}` : '',
+    `${help ? 'PRECISO DE AJUDA' : 'Estou bem'}${S.settings.myName ? ' (' + S.settings.myName + ')' : ''}, ${time}.`,
+    pos ? `Estou aqui: https://maps.google.com/?q=${pos.lat.toFixed(5)},${pos.lng.toFixed(5)}` : '',
     g ? `Ponto de encontro: ${g.meetingPoint || fmtCoords(g)}.` : '',
   ].filter(Boolean).join(' ');
 }
@@ -1936,10 +1949,11 @@ function sendStatus(help) {
   const text = statusText(help), nums = statusRecipients();
   // Também no chat dos grupos: chega por internet quando houver, e fica em fila sem rede.
   S.groups.filter(g => g.chat).forEach(g => postToGroup(g, text));
-  if (!ui.pos) locate(() => render()); // a próxima mensagem já leva a posição atual
-  if (nums.length) { location.href = smsHref(nums, text); return; }
+  if (!ui.pos) locateQuiet(() => render(), () => {}); // a próxima mensagem já leva a posição atual
+  // Num telemóvel abre sempre as SMS: com os telefones do grupo ou para escolher a quem enviar.
+  if (native() || 'ontouchstart' in window) { location.href = smsHref(nums, text); return; }
   if (navigator.share) navigator.share({ text }).catch(() => {});
-  else { navigator.clipboard?.writeText(text); toast('Sem telefones no grupo. Mensagem copiada.'); }
+  else { navigator.clipboard?.writeText(text); toast('Mensagem copiada. Cole-a numa mensagem.'); }
 }
 // ---------- Passo a passo de uma situação ----------
 // A evacuação usa a lista "Antes de sair de casa" do utilizador (a que ele planeou).
@@ -1962,7 +1976,11 @@ function viewAct() {
   return `
   <div class="act-head">${icon(GUIDE_ICONS[g.id] || 'alert')}<strong>${esc(g.title)}</strong><span class="count">${end ? 'Concluído' : `Passo ${i + 1} de ${n}`}</span></div>
   <div class="dots" aria-hidden="true">${steps.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</div>
-  ${end ? `<section class="card step-card">
+  ${end && g.prep ? `<section class="card step-card">
+      <p class="step-text">Terminou.</p>
+      <p class="muted">Marque como feito para avançar no seu plano.</p>
+      <button class="btn primary wide" data-act="guideDone">Marcar como feito ✓</button>
+    </section>` : end ? `<section class="card step-card">
       <p class="step-text">Fez todos os passos.</p>
       <p class="muted">Avise a família e siga as indicações das autoridades.</p>
       <div class="status-btns"><button class="btn ok" data-act="status" data-v="ok">✓ Estou bem</button><button class="btn help" data-act="status" data-v="help">! Preciso de ajuda</button></div>
@@ -1970,18 +1988,33 @@ function viewAct() {
     : `<section class="card step-card"><span class="step-num">${i + 1}</span><p class="step-text">${esc(steps[i])}</p></section>`}
   <div class="step-nav">
     ${i > 0 ? '<button class="btn" data-act="stepPrev">‹ Anterior</button>' : ''}
-    ${end ? '<a class="btn primary" href="#/emergencia">Outras situações</a>' : `<button class="btn primary" data-act="stepNext">${i === n - 1 ? 'Concluir ✓' : 'Seguinte ›'}</button>`}
+    ${end ? (g.prep ? '<a class="btn" href="#/preparar">Voltar ao plano</a>' : '<a class="btn primary" href="#/emergencia">Outras situações</a>') : `<button class="btn primary" data-act="stepNext">${i === n - 1 ? 'Concluir ✓' : 'Seguinte ›'}</button>`}
   </div>
   ${goRow}
   <details class="card fold" data-fold="all-steps" ${isOpen('all-steps', false) ? 'open' : ''}>
     <summary>${icon('list')}<span class="fold-t">Ver todos os passos</span></summary>
     <ol class="all-steps">${steps.map((t, k) => `<li class="${k < i ? 'done' : ''}">${esc(t)}</li>`).join('')}</ol>
   </details>
-  <p class="crisis-exit"><a href="#/emergencia">‹ Modo emergência</a></p>`;
+  ${g.prep ? '<p class="crisis-exit"><a href="#/preparar">‹ O seu plano</a></p>' : '<p class="crisis-exit"><a href="#/emergencia">‹ Modo emergência</a></p>'}`;
 }
 
+// Situação sugerida pelo que está a acontecer agora (sismo, avisos do IPMA, risco de incêndio).
+function suggestedGuides() {
+  const out = [], add = (id, why) => { if (GUIDES.some(g => g.id === id) && !out.some(x => x.id === id)) out.push({ id, why }); };
+  const qk = strongQuake();
+  if (qk) add('sismo', `Sismo de magnitude ${qk.mag.toFixed(1).replace('.', ',')}`);
+  districtAlerts().slice().sort((x, y) => SEV[y.awarenessLevelID] - SEV[x.awarenessLevelID]).forEach(w => {
+    const id = ALERT_GUIDES[w.awarenessTypeName];
+    if (id) add(id, `Aviso ${LEVELS[w.awarenessLevelID][0].toLowerCase()} · ${w.awarenessTypeName.toLowerCase()}`);
+  });
+  const fr = fireRiskHere();
+  if (fr && fr.today >= 4) add('incendio', `Risco de incêndio ${FIRE_LEVELS[fr.today].toLowerCase()}`);
+  return out;
+}
 function viewEmergency() {
   ui.stepFor = null; // ao escolher de novo uma situação, começa no primeiro passo
+  // Sem posição ainda: tenta obtê-la já, para mostrar o ponto mais próximo.
+  if (!ui.pos && !ui.emAsked) { ui.emAsked = true; setTimeout(() => locateQuiet(() => render(), () => {}), 0); }
   const pos = myPos(), nums = statusRecipients();
   const meet = S.groups.filter(g => g.meetingPoint || hasCoords(g));
   const alts = S.groups.flatMap(g => livePoints(g).map(x => ({ ...x, g })));
@@ -1993,21 +2026,20 @@ function viewEmergency() {
     ...S.contacts.filter(c => c.priority && c.phone).map(c => [c.name, c.phone]),
     ...['fire', 'police'].flatMap(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => [s.n, s.phone])),
   ].slice(0, 10);
-  const qk = strongQuake();
+  const sug = suggestedGuides();
+  const tiles = [...sug.map(x => GUIDES.find(g => g.id === x.id)), ...GUIDES.filter(g => !g.prep && !sug.some(x => x.id === g.id))];
+  // O ponto oficial só aparece se for outro sítio (não o mesmo que a família já escolheu).
+  const nearOk = near && near.d <= 25 && !meet.some(g => hasCoords(g) && distanceKm(g, near.p) < 0.3);
   return `
+  <p class="crisis-exit top"><a href="#/painel">‹ Sair do modo emergência</a></p>
   <a class="btn call big" href="tel:112">${icon('phone')} Ligar 112</a>
-  ${qk ? quakeBanner(qk) : ''}
-  <section class="card">
-    <h3>O que está a acontecer?</h3>
-    <div class="tiles">${GUIDES.filter(g => g.id !== 'telemovel').map(g => `<a class="tile" href="#/agir/${g.id}">${icon(GUIDE_ICONS[g.id] || 'alert')}<strong>${esc(g.title)}</strong><small>${guideSteps(g).length} passos</small></a>`).join('')}</div>
-  </section>
   <section class="card">
     <h3>Avisar a família</h3>
     <div class="status-btns">
       <button class="btn ok" data-act="status" data-v="ok">✓ Estou bem</button>
       <button class="btn help" data-act="status" data-v="help">! Preciso de ajuda</button>
     </div>
-    <p class="muted small">${nums.length ? `Abre as SMS para ${nums.length} pessoa(s) com ${pos ? 'a sua posição' : 'o ponto de encontro'}.` : 'Adicione telefones às pessoas do grupo para enviar por SMS.'}
+    <p class="muted small">${nums.length ? `Abre as SMS para ${nums.length} pessoa(s), com ${pos ? 'a sua localização' : 'o ponto de encontro'}.` : 'Abre as SMS com a mensagem pronta: escolha a quem enviar.'}
       As SMS costumam funcionar quando a internet falha.</p>
   </section>
   <section class="card">
@@ -2016,12 +2048,18 @@ function viewEmergency() {
       <strong>${esc(g.meetingPoint || fmtCoords(g))}</strong>${hasCoords(g) ? navLinks(g, g.meetingPoint) : ''}</div></div>`).join('')}
     ${alts.map(x => `<div class="meet alt">${icon('pin')}<div class="meet-body"><div class="muted small">${esc(MEET_KINDS[x.kind])}${x.notes ? ' · ' + esc(x.notes) : ''}</div>
       <strong>${esc(x.name)}</strong>${hasCoords(x) ? navLinks(x, x.name) : ''}</div></div>`).join('')}
-    ${near && near.d <= 25 ? `<div class="meet near">${icon('pin')}<div class="meet-body"><div class="muted small">Ponto oficial mais próximo · ${fmtDist(near.d)} para ${bearing(pos, near.p)}</div>
+    ${nearOk ? `<div class="meet near">${icon('pin')}<div class="meet-body"><div class="muted small">Ponto oficial mais próximo · ${fmtDist(near.d)} para ${bearing(pos, near.p)}</div>
       <strong>${esc(near.p.n)}</strong>${navLinks(near.p, near.p.n)}</div></div>` : ''}
     ${tsu && tsu.d <= 5 ? `<p class="note small"><strong>Está perto da costa.</strong> Depois de um sismo forte, afaste-se do mar a pé e suba: ponto de tsunami mais próximo a ${fmtDist(tsu.d)} (${esc(tsu.p.n)}).</p>` : ''}
-    ${!meet.length && !alts.length && !(near && near.d <= 25) ? `<p class="muted">Sem ponto definido. <button class="btn sm" data-act="useLocation">${icon('pin')} Ver o ponto oficial mais próximo</button></p>` : ''}
+    ${!pos && !meet.length ? `<button class="btn primary wide" data-act="useLocation">${icon('pin')} Encontrar o ponto mais próximo</button>
+      <p class="muted small">Usa a sua localização, só neste telemóvel.</p>` : ''}
+    ${pos && !meet.length && !alts.length && !nearOk ? `<p>Não há pontos de encontro oficiais publicados perto de si. Afaste-se do perigo e siga as indicações da Proteção Civil e da rádio.</p>
+      <a class="btn" href="#/mapa">${icon('map')} Abrir o mapa</a>` : ''}
   </section>
-
+  <section class="card">
+    <h3>O que está a acontecer?</h3>
+    <div class="tiles">${tiles.map(g => { const sg = sug.find(x => x.id === g.id); return `<a class="tile ${sg ? 'suggested' : ''}" href="#/agir/${g.id}">${icon(GUIDE_ICONS[g.id] || 'alert')}<strong>${esc(g.title)}</strong><small>${sg ? esc(sg.why) : guideSteps(g).length + ' passos'}</small></a>`; }).join('')}</div>
+  </section>
   ${calls.length ? `<section class="card"><h3>Ligar</h3><ul class="list">${calls.map(([n, p]) => `<li class="row"><div class="row-main"><div class="row-title">${esc(n)}</div></div>
     <a class="btn" href="${telHref(p)}" aria-label="Ligar a ${esc(n)}">${icon('phone')} ${esc(p)}</a></li>`).join('')}</ul></section>` : ''}
   ${health.length ? `<section class="card"><h3>Saúde (para quem socorre)</h3><ul class="list">${health.map(m => `<li class="row"><div class="row-main">
@@ -2036,7 +2074,7 @@ function viewEmergency() {
       <li>Desligue dados e Bluetooth quando não precisar; ligue de vez em quando para ver mensagens.</li>
     </ul>
   </section>
-  <p class="crisis-exit"><a href="#/painel">Sair do modo emergência</a></p>`;
+  <p class="crisis-exit"><a href="#/painel">‹ Sair do modo emergência</a></p>`;
 }
 
 // ---------- Cartão da família (para imprimir) ----------
@@ -2075,17 +2113,17 @@ function viewMore() {
   const block = (title, items) => `<section class="card"><h3>${title}</h3><ul class="list">${items.map(link).join('')}</ul></section>`;
   const sec = k => [k, ROUTES[k][0], ROUTES[k][1], ROUTES[k][4]];
   return `<a class="sos-entry" href="#/emergencia">${icon('alert')} Modo emergência</a>
-  ${block('Secções', navOrder().slice(4).map(sec))}
+  ${block('Secções', navOrder().slice(BAR).map(sec))}
   ${block('Ter à mão', [['cartao', 'Cartão da família', 'users', 'Para imprimir e guardar no kit']])}
   ${block('Aplicação', [sec('definicoes'), ['sobre', 'Sobre e privacidade', 'shield', 'Missão, princípios, dados']])}`;
 }
 
 // Contadores: avisos graves (Avisos) e mensagens por ler (Grupos); no telemóvel somam-se no Menu se a secção lá estiver.
 function navBadge(k, order) {
-  const urgent = districtAlerts().filter(w => SEV[w.awarenessLevelID] >= 2).length;
+  const urgent = districtAlerts().length; // a mesma contagem do Início e da página Avisos
   const msgs = unreadTotal();
-  const top = order.slice(0, 4);
-  if (k === 'alertas') return countBadge(urgent, 'avisos graves');
+  const top = order.slice(0, BAR);
+  if (k === 'alertas') return countBadge(urgent, 'avisos ativos');
   if (k === 'grupos') return countBadge(msgs, 'mensagens por ler');
   if (k === 'mais') return countBadge((top.includes('alertas') ? 0 : urgent) + (top.includes('grupos') ? 0 : msgs), 'novidades');
   return '';
@@ -2106,11 +2144,11 @@ function render() {
   const order = navOrder();
   // Telemóvel e computador: as mesmas 4 secções + Menu.
   const here = r === 'chat' ? 'grupos' : r;
-  const inMenuMobile = !order.slice(0, 4).includes(here);
+  const inMenuMobile = !order.slice(0, BAR).includes(here);
   $('#nav').innerHTML = [...order, 'mais'].map((k, i) => {
     const [t, ic] = ROUTES[k];
     const current = k === here || (k === 'mais' && inMenuMobile);
-    const cls = k === 'mais' ? `more${inMenuMobile ? ' cur-m' : ''}` : i < 4 ? 'pri' : 'sec';
+    const cls = k === 'mais' ? `more${inMenuMobile ? ' cur-m' : ''}` : i < BAR ? 'pri' : 'sec';
     return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${navBadge(k, order)}</a>`;
   }).join('');
   const title = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
@@ -2119,7 +2157,7 @@ function render() {
   if (map && r !== 'mapa') { map.remove(); map = null; mapLayer = null; }
   const draft = $('.chat-form input')?.value;
   $('#main').className = 'r-' + r;
-  document.documentElement.classList.toggle('crisis', r === 'emergencia' || r === 'agir');
+  document.documentElement.classList.toggle('crisis', r === 'emergencia' || (r === 'agir' && !GUIDES.find(x => x.id === ui.guide)?.prep));
   $('#main').innerHTML = pageHead(r, title) + `<div class="content">${ROUTES[r][2]()}</div>`;
   if (r === 'mapa') initMap();
   if (r === 'chat') { renderChatLog(); markChatRead(ui.chatGroup); }
@@ -2161,7 +2199,7 @@ const actions = {
   editItem: d => itemForm(findKit(d.id)),
   inc: d => { findKit(d.id).have++; },
   dec: d => { const i = findKit(d.id); i.have = Math.max(0, i.have - 1); },
-  fill: d => { const i = findKit(d.id); i.have = isOk(i) ? 0 : Math.max(need(i), 1); },
+  fill: d => { const i = findKit(d.id); i.have = hasItem(i) ? 0 : Math.max(need(i), 1); },
   addContact: () => contactForm(),
   editContact: d => contactForm(S.contacts.find(c => c.id === d.id)),
   addGroup: () => groupForm(),
@@ -2191,6 +2229,14 @@ const actions = {
   drillDone: () => { S.settings.lastDrill = Date.now(); toast('Registado. Próximo lembrete daqui a 6 meses.'); scheduleNativeReminders(); },
   drillLater: () => { S.settings.drillSnooze = Date.now() + 30 * 864e5; },
   phoneReady: () => { S.settings.phoneReady = true; },
+  wizard: d => { startWizard(Number(d.v) || 1); return 'async'; },
+  guideDone: () => {
+    if (ui.guide === 'telemovel') S.settings.phoneReady = true;
+    if (ui.guide === 'simulacro') { S.settings.lastDrill = Date.now(); scheduleNativeReminders(); }
+    save(); toast('Feito. Mais um passo do plano.');
+    location.hash = '#/preparar';
+    return 'async';
+  },
   status: d => { sendStatus(d.v === 'help'); return 'async'; },
   stepNext: () => { ui.step = (ui.step || 0) + 1; window.scrollTo(0, 0); },
   stepPrev: () => { ui.step = Math.max(0, (ui.step || 0) - 1); window.scrollTo(0, 0); },
@@ -2299,24 +2345,130 @@ document.addEventListener('visibilitychange', () => {
 });
 try { nativeLN()?.addListener?.('localNotificationActionPerformed', a => { const u = a?.notification?.extra?.url; if (typeof u === 'string' && u.startsWith('#/chat/')) location.hash = u; }); } catch { /* sem plugin */ }
 // Primeira utilização: 3 perguntas para o kit fazer sentido desde o início.
-function onboarding() {
+// Primeira utilização: um assistente de 3 passos (quem vive consigo, onde se encontram, pronto).
+function onboarding() { startWizard(1); }
+function startWizard(step = 1) {
   S.settings.onboarded = true; save();
-  openForm({
-    title: 'Bem-vindo à eKit',
-    submitLabel: 'Começar',
-    values: { household: S.settings.household, district: S.settings.district, makeGroup: true },
-    fields: [
-      { type: 'info', html: '<strong class="tagline">Preparados, juntos.</strong><br>Preparar pessoas e famílias para o dia em que for preciso. Fica tudo guardado neste dispositivo.' },
-      { k: 'household', label: 'Quantas pessoas vivem em casa?', type: 'number' },
-      { k: 'district', label: 'Distrito (para os avisos)', type: 'select', options: Object.entries(IPMA_AREAS) },
-      { k: 'makeGroup', label: 'Definir agora o ponto de encontro da família', type: 'checkbox' },
-    ],
-    onSave(v) {
-      S.settings.household = Math.max(1, Math.round(v.household) || 1);
-      S.settings.district = v.district;
-      if (v.makeGroup && !S.groups.length) setTimeout(() => groupForm(null, { name: 'Família' }), 0);
-    },
-  });
+  const g = S.groups[0];
+  ui.wz ||= { step: 1, myName: S.settings.myName || '', household: S.settings.household || 2, people: [{}, {}, {}],
+    place: g && hasCoords(g) ? { name: g.meetingPoint, lat: g.lat, lng: g.lng } : null, district: S.settings.district };
+  ui.wz.step = step; ui.wzMsg = '';
+  wzRender();
+  if (!$('#dlg').open) $('#dlg').showModal();
+}
+function wzRead() {
+  const f = $('#dlg form.wz'), w = ui.wz;
+  if (!f || !w) return;
+  if (w.step === 1) {
+    w.myName = f.elements.myName.value.trim();
+    w.household = Math.max(1, Math.min(50, Math.round(Number(f.elements.household.value) || 1)));
+    w.people = [0, 1, 2].map(i => ({ name: f.elements['pn' + i].value.trim(), phone: f.elements['pp' + i].value.trim() }));
+  }
+  if (w.step === 2 && w.place && f.elements.place) w.place.name = f.elements.place.value.trim() || w.place.name;
+  if (w.step === 3) w.district = f.elements.district.value;
+}
+function wzRender() {
+  const w = ui.wz, d = $('#dlg');
+  const dots = [1, 2, 3].map(k => `<i class="${k < w.step ? 'done' : k === w.step ? 'on' : ''}"></i>`).join('');
+  const others = w.people.filter(p => p.name);
+  let body = '';
+  if (w.step === 1) body = `<h2>Quem vive consigo?</h2>
+    <p class="muted">Serve para calcular o kit e para avisar a família numa emergência.</p>
+    <label for="wz-me">O seu nome</label><input id="wz-me" name="myName" value="${esc(w.myName)}" autocomplete="given-name">
+    <label for="wz-hh">Quantas pessoas vivem em casa, contando consigo?</label><input id="wz-hh" name="household" type="number" min="1" inputmode="numeric" value="${w.household}">
+    <span class="label wz-label">Outras pessoas (opcional)</span>
+    ${w.people.map((p, i) => `<div class="wz-person"><input name="pn${i}" placeholder="Nome" value="${esc(p.name || '')}" aria-label="Nome da pessoa ${i + 1}" autocomplete="off"><input name="pp${i}" type="tel" placeholder="Telemóvel" value="${esc(p.phone || '')}" aria-label="Telemóvel da pessoa ${i + 1}" autocomplete="off"></div>`).join('')}
+    <p class="muted small">Pode acrescentar mais pessoas e animais depois, em Família.</p>`;
+  if (w.step === 2) body = `<h2>Onde se encontram?</h2>
+    <p class="muted">Se não puderem voltar a casa, todos vão para este sítio.</p>
+    <div class="wz-opts">
+      <button type="button" class="now-row" data-wz="near">${icon('pin')}<span class="now-t"><strong>Ponto oficial mais próximo</strong><small>Usa a sua localização</small></span></button>
+      <button type="button" class="now-row" data-wz="here">${icon('home')}<span class="now-t"><strong>Onde estou agora</strong><small>Por exemplo, à porta de casa</small></span></button>
+      <button type="button" class="now-row" data-wz="map">${icon('map')}<span class="now-t"><strong>Escolher no mapa</strong><small>Um jardim, uma escola, a casa de alguém</small></span></button>
+    </div>
+    ${ui.wzMsg ? `<p class="small">${esc(ui.wzMsg)}</p>` : ''}
+    ${w.place ? `<div class="wz-chosen">${icon('checkCircle')}<div><label for="wz-place">Nome do local escolhido</label><input id="wz-place" name="place" value="${esc(w.place.name)}">
+      <p class="muted small">${fmtCoords(w.place)} · <button type="button" class="linkbtn" data-wz="map">Ajustar no mapa</button></p></div></div>` : ''}`;
+  if (w.step === 3) body = `<h2>Tudo pronto para começar</h2>
+    <ul class="wz-sum">
+      <li>${icon('checkCircle')}<span>${w.household} pessoa(s) em casa${others.length ? ' · ' + others.map(p => esc(p.name)).join(', ') : ''}</span></li>
+      <li>${icon(w.place ? 'checkCircle' : 'circle')}<span>${w.place ? 'Ponto de encontro: ' + esc(w.place.name) : 'Ponto de encontro: pode definir depois'}</span></li>
+    </ul>
+    <label for="wz-d">Zona dos avisos</label><select id="wz-d" name="district">${Object.entries(IPMA_AREAS).map(([k, v]) => `<option value="${k}" ${k === w.district ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
+    <p class="muted small">Fica tudo guardado neste telemóvel. A seguir mostramos o seu plano em 6 passos.</p>`;
+  d.innerHTML = `<form class="form wz"><div class="wz-head"><span class="label">Passo ${w.step} de 3</span><div class="dots" aria-hidden="true">${dots}</div></div>
+    ${body}
+    <div class="form-actions">
+      ${w.step > 1 ? '<button type="button" class="btn ghost" data-wz="back">‹ Voltar</button>' : '<button type="button" class="btn ghost" data-wz="close">Mais tarde</button>'}
+      <span class="spacer"></span>
+      ${w.step === 2 && !w.place ? '<button type="button" class="btn" data-wz="next">Saltar</button>' : ''}
+      <button type="submit" class="btn primary">${w.step === 3 ? 'Ver o meu plano' : 'Seguinte ›'}</button>
+    </div></form>`;
+  const f = d.querySelector('form');
+  f.onsubmit = e => { e.preventDefault(); wzRead(); if (w.step === 3) return wzFinish(); w.step++; ui.wzMsg = ''; wzRender(); };
+  f.onclick = e => {
+    const b = e.target.closest('[data-wz]');
+    if (!b) return;
+    const a = b.dataset.wz;
+    wzRead();
+    if (a === 'back') { w.step--; ui.wzMsg = ''; wzRender(); }
+    else if (a === 'close') { ui.wz = null; d.close(); render(); }
+    else if (a === 'next') { w.step++; ui.wzMsg = ''; wzRender(); }
+    else if (a === 'map') pickOnMap(w.place, p => { w.place = { name: w.place?.name || 'Ponto de encontro', ...p }; ui.wzMsg = ''; wzRender(); });
+    else if (a === 'near' || a === 'here') {
+      ui.wzMsg = 'A obter a localização…'; wzRender();
+      locateQuiet(p => {
+        if (a === 'near') {
+          const n = POINTS.length ? nearestOfficial(p) : null;
+          if (!n || n.d > 25) { ui.wzMsg = 'Não há pontos oficiais publicados perto de si. Escolha no mapa.'; return wzRender(); }
+          w.place = { name: `${n.p.n} (${n.p.m})`, lat: n.p.lat, lng: n.p.lng };
+        } else w.place = { name: 'Junto a casa', lat: +p.lat.toFixed(6), lng: +p.lng.toFixed(6) };
+        w.district = S.settings.district || districtFromCoords(p);
+        ui.wzMsg = ''; wzRender();
+      }, msg => { ui.wzMsg = msg; wzRender(); });
+    }
+  };
+  f.querySelector('input:not([type=hidden])')?.focus({ preventScroll: true });
+}
+function wzFinish() {
+  const w = ui.wz, now = Date.now();
+  if (w.myName) S.settings.myName = w.myName.slice(0, 40);
+  S.settings.household = w.household;
+  if (w.district && w.district !== S.settings.district) { S.settings.district = w.district; S.settings.autoDistrict = false; }
+  let g = S.groups[0];
+  if (!g) {
+    g = { id: uid(), name: 'A minha família', meetingPoint: '', lat: '', lng: '', notes: '', members: [], pets: [], points: [], meta: Object.fromEntries(GROUP_FIELDS.map(k => [k, now])) };
+    S.groups.push(g);
+    setupGroupKey(g);
+  }
+  w.people.filter(p => p.name).forEach(p => g.members.push({ id: uid(), name: p.name.slice(0, 200), phone: p.phone.slice(0, 30), updatedAt: now }));
+  if (w.place) { Object.assign(g, { meetingPoint: w.place.name, lat: w.place.lat, lng: w.place.lng }); g.meta ||= {}; g.meta.meetingPoint = g.meta.lat = g.meta.lng = now; }
+  if (g.chat) markDirty(g);
+  setTimeout(() => addSelfToGroup(g), 0);
+  ui.wz = null;
+  $('#dlg').close();
+  save();
+  if (location.hash !== '#/preparar') location.hash = '#/preparar'; else render();
+  toast('O seu plano está pronto. Siga os passos.');
+}
+
+// Escolher um local arrastando o mapa até ao alvo (sem escrever coordenadas).
+function pickOnMap(start, cb) {
+  if (!window.L) return toast('O mapa precisa de internet da primeira vez.');
+  let d = $('#picker');
+  if (!d) { d = document.createElement('dialog'); d.id = 'picker'; document.body.append(d); }
+  d.innerHTML = `<div class="form"><h2>Escolher no mapa</h2><p class="muted small">Arraste e aproxime o mapa até o alvo ficar no local.</p>
+    <div class="pick-wrap"><div id="pick-map"></div><span class="pick-target" aria-hidden="true"></span></div>
+    <div class="form-actions"><button type="button" class="btn ghost" data-x>Cancelar</button><span class="spacer"></span><button type="button" class="btn primary" data-ok>Usar este local</button></div></div>`;
+  d.showModal();
+  const here = myPos(), has = start && hasCoords(start);
+  const m = L.map(d.querySelector('#pick-map'), { zoomSnap: 0.5 }).setView(has ? [start.lat, start.lng] : here ? [here.lat, here.lng] : [39.5, -8.2], has || here ? 16 : 7);
+  offlineTileLayer().addTo(m);
+  POINTS.forEach(p => L.circleMarker([p.lat, p.lng], { radius: 5, color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.7, weight: 1 }).addTo(m));
+  const close = () => { m.remove(); d.close(); };
+  d.querySelector('[data-x]').onclick = close;
+  d.querySelector('[data-ok]').onclick = () => { const c = m.getCenter(); close(); cb({ lat: +c.lat.toFixed(6), lng: +c.lng.toFixed(6) }); };
+  setTimeout(() => m.invalidateSize(), 60);
 }
 
 render();
