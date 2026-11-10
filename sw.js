@@ -1,8 +1,7 @@
 // Service worker: app disponível offline + cache de mapa (Leaflet e mosaicos já vistos).
-const VERSION = 'ekit-v9';
-const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
-const APP = ['./', './index.html', './styles.css', './app.js', './data.js', './pontos-encontro.json', './manifest.webmanifest', './icon.svg', './chat.js', './vendor/nostr-tools-2.25.1.js', './vendor/fonts/source-sans-3-latin-wght-normal.woff2', './vendor/fonts/source-serif-4-latin-wght-normal.woff2',
-  LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css'];
+const VERSION = 'ekit-v13';
+const APP = ['./', './index.html', './styles.css', './app.js', './data.js', './pontos-encontro.json', './manifest.webmanifest', './privacidade.html', './icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './chat.js', './vendor/nostr-tools-2.25.1.js', './vendor/fonts/source-sans-3-latin-wght-normal.woff2', './vendor/fonts/source-serif-4-latin-wght-normal.woff2',
+  './vendor/leaflet/leaflet.min.js', './vendor/leaflet/leaflet.min.css'];
 const TILES = 'ekit-tiles';
 const MAX_TILES = 1500;
 
@@ -42,8 +41,8 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // App e Leaflet (CDN): stale-while-revalidate.
-  if (url.origin === location.origin || url.hostname === 'cdnjs.cloudflare.com') {
+  // Ficheiros da app (tudo local): stale-while-revalidate.
+  if (url.origin === location.origin) {
     e.respondWith(caches.open(VERSION).then(async c => {
       const hit = await c.match(req, { ignoreSearch: url.origin === location.origin });
       const net = fetch(req, { cache: 'no-cache' }).then(res => { if (res.ok) c.put(req, res.clone()); return res; }).catch(() => null);

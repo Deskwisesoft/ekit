@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Política de privacidade · eKit</title>
+  <meta name="description" content="Como a eKit trata os dados: tudo fica no dispositivo, sem contas nem servidor próprio.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <a class="brand" href="./">
+        <img src="icon.svg" alt="" width="34" height="34">
+        <span><span class="brand-name">eKit</span><span class="brand-tag">Preparação para emergências</span></span>
+      </a>
+    </div>
+  </header>
+  <main>
+    <header class="page-head">
+      <span class="eyebrow">Atualizada a 10 de novembro de 2026</span>
+      <h1>Política de privacidade</h1>
+      <p>A eKit foi desenhada para tratar o mínimo de dados possível. Esta página explica, em linguagem simples, o que acontece a cada tipo de informação.</p>
+    </header>
+    <div class="content">
+      <section class="card">
+        <h3>1. Quem é responsável</h3>
+        <p>A eKit é uma iniciativa independente publicada por <strong>[nome da entidade responsável]</strong>, contacto <strong>[email de contacto]</strong>.
+          A eKit não tem servidor próprio nem contas de utilizador: não recebemos, não guardamos e não conseguimos ler os seus dados.</p>
+      </section>
+      <section class="card">
+        <h3>2. Dados guardados no seu dispositivo</h3>
+        <p>O kit, as validades, os contactos, as listas, os grupos e as mensagens ficam guardados <strong>apenas no armazenamento local</strong> do seu dispositivo.
+          Pode exportá-los ou apagá-los a qualquer momento em Definições. Se desinstalar a app ou limpar os dados do navegador, são apagados.</p>
+      </section>
+      <section class="card">
+        <h3>3. Grupos e chat</h3>
+        <p>Quando partilha um grupo, é criado um ficheiro cifrado (AES-256) com uma palavra-passe escolhida por si. Com internet, as alterações do grupo e as mensagens
+          do chat são enviadas <strong>cifradas de ponta a ponta</strong> com uma chave que só os membros do grupo têm, através de relays públicos do protocolo Nostr
+          (por omissão: relay.damus.io, nos.lol, relay.primal.net; pode escolher outros em Definições).</p>
+        <p>Esses relays são serviços de terceiros, que podem estar fora da União Europeia. Guardam o texto cifrado durante o período que cada um define, e veem o
+          endereço IP de ligação, um identificador aleatório do dispositivo e a hora de envio. Não conseguem ler o conteúdo.</p>
+        <p>Dados de saúde de membros (por exemplo, mobilidade reduzida) só podem ser guardados com o <strong>consentimento explícito</strong> da pessoa, que fica registado.</p>
+      </section>
+      <section class="card">
+        <h3>4. Localização</h3>
+        <p>A localização só é pedida quando carrega em "Onde estou" ou "Usar a minha posição". É usada no dispositivo para calcular distâncias e não é enviada a ninguém.</p>
+      </section>
+      <section class="card">
+        <h3>5. Serviços externos consultados</h3>
+        <ul class="plain">
+          <li>IPMA (avisos meteorológicos) e Município de Lisboa (pontos de encontro): pedidos de dados públicos.</li>
+          <li>OpenStreetMap (mapa): imagens do mapa da zona que está a ver.</li>
+        </ul>
+        <p>Como em qualquer ligação à internet, estes serviços recebem o endereço IP do dispositivo. Não é enviada nenhuma informação pessoal sua.</p>
+      </section>
+      <section class="card">
+        <h3>6. O que a eKit não faz</h3>
+        <ul class="plain">
+          <li>Não usa publicidade, rastreio, cookies de terceiros nem análise de utilização.</li>
+          <li>Não vende nem partilha dados.</li>
+          <li>Não faz chamadas sem a sua confirmação: o 112 abre sempre o marcador do telemóvel.</li>
+        </ul>
+      </section>
+      <section class="card">
+        <h3>7. Os seus direitos</h3>
+        <p>Como os dados estão sob o seu controlo, pode consultá-los, corrigi-los, exportá-los e apagá-los diretamente na app. Para questões sobre esta política,
+          contacte <strong>[email de contacto]</strong>. Pode também apresentar reclamação à Comissão Nacional de Proteção de Dados (CNPD).</p>
+      </section>
+      <section class="card">
+        <h3>8. Aviso</h3>
+        <p>A eKit é uma iniciativa independente e não é um serviço oficial. Em emergência, ligue 112 e siga as indicações das autoridades.</p>
+      </section>
+    </div>
+  </main>
+  <footer class="foot"><p><a href="./">Voltar à eKit</a> · <a href="https://github.com/Deskwisesoft/ekit">Código aberto</a></p></footer>
+</body>
+</html>

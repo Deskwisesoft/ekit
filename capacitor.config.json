@@ -1,0 +1,14 @@
+{
+  "appId": "io.github.deskwisesoft.ekit",
+  "appName": "eKit",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#12325a"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "iconColor": "#12325a"
+    }
+  }
+}

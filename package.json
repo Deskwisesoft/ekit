@@ -1,0 +1,19 @@
+{
+  "name": "ekit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "eKit – preparação para emergências (site + app iOS via Capacitor)",
+  "scripts": {
+    "build": "node scripts/build-www.mjs",
+    "ios": "npm run build && npx cap sync ios && npx cap open ios",
+    "sync": "npm run build && npx cap sync"
+  },
+  "dependencies": {
+    "@capacitor/core": "~8.5.3",
+    "@capacitor/ios": "~8.5.3",
+    "@capacitor/local-notifications": "~8.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "~8.5.3"
+  }
+}

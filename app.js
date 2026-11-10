@@ -19,8 +19,84 @@ function seed() {
     alertsCache: null,
   };
 }
+// ---------- Validação de tudo o que vem de fora (armazenamento, ficheiros, relays, dados abertos) ----------
+// Os dados são normalizados à entrada: textos limitados, números verificados, coordenadas dentro dos limites,
+// só os campos conhecidos. Assim nada vindo de outro membro do grupo ou de um ficheiro chega ao HTML sem controlo.
+const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes'];
+const MEMBER_FIELDS = ['name', 'phone', 'role', 'bitchat', 'needs', 'consentAt'];
+const NAV_KEYS = ['painel', 'kit', 'mapa', 'alertas', 'contactos', 'grupos', 'listas', 'guia', 'definicoes', 'sobre'];
+const arr = v => (Array.isArray(v) ? v : []);
+const str = (v, max = 500) => (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, max);
+const num = (v, d = 0) => (v !== '' && v != null && Number.isFinite(Number(v)) ? Number(v) : d);
+const coord = (v, lim) => { const n = Number(v); return v !== '' && v != null && Number.isFinite(n) && Math.abs(n) <= lim ? n : ''; };
+const isoDate = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+const clampTs = v => Math.min(num(v), Date.now() + 5 * 60e3); // ninguém "ganha" com relógios no futuro
+const idOf = v => (typeof v === 'string' && v && v.length <= 80 ? v : uid());
+
+function cleanMember(m) {
+  const o = { id: idOf(m?.id), updatedAt: clampTs(m?.updatedAt) };
+  if (m?.deleted) { o.deleted = true; return o; }
+  for (const k of MEMBER_FIELDS) o[k] = str(m?.[k], k === 'needs' ? 1000 : 200);
+  o.consent = !!m?.consent;
+  if (o.needs && !o.consent) o.needs = '';
+  return o;
+}
+function cleanGroup(g) {
+  const o = {
+    id: idOf(g?.id), name: str(g?.name, 120) || 'Grupo', meetingPoint: str(g?.meetingPoint, 300),
+    lat: coord(g?.lat, 90), lng: coord(g?.lng, 180), notes: str(g?.notes, 2000), meta: {},
+    members: arr(g?.members).filter(m => m && typeof m.id === 'string').slice(0, 200).map(cleanMember),
+  };
+  if (o.lat === '' || o.lng === '') { o.lat = ''; o.lng = ''; }
+  for (const k of GROUP_FIELDS) if (g?.meta?.[k] != null) o.meta[k] = clampTs(g.meta[k]);
+  return o;
+}
+const cleanChatCfg = c => (c && /^[A-Za-z0-9+/]{43}=$/.test(c.key) && /^[0-9a-f]{40}$/.test(c.topic)
+  ? { key: c.key, topic: c.topic, createdAt: str(c.createdAt, 40) } : undefined);
+function cleanPoint(p) {
+  const o = { n: str(p?.n, 200) || 'Ponto de encontro', f: str(p?.f, 120), m: str(p?.m, 60), lat: coord(p?.lat, 90), lng: coord(p?.lng, 180),
+    cap: Number.isFinite(Number(p?.cap)) && p?.cap !== null ? Math.round(Number(p.cap)) : null, t: str(p?.t, 30) };
+  return o.lat === '' || o.lng === '' ? null : o;
+}
+function cleanState(s) {
+  const base = seed();
+  if (!s || typeof s !== 'object') return base;
+  const st = s.settings || {};
+  const out = { ...s, version: 1 };
+  out.settings = {
+    ...base.settings,
+    household: Math.max(1, Math.min(50, Math.round(num(st.household, 2)))),
+    district: Object.hasOwn(IPMA_AREAS, st.district) ? st.district : 'LSB',
+    notifyDays: Math.max(1, Math.min(365, Math.round(num(st.notifyDays, 30)))),
+    lastNotified: str(st.lastNotified, 10), onboarded: !!st.onboarded, myName: str(st.myName, 40),
+    relays: arr(st.relays).filter(u => typeof u === 'string' && /^wss?:\/\/[^\s"'<>]+$/.test(u)).slice(0, 10),
+    navOrder: arr(st.navOrder).filter(k => NAV_KEYS.includes(k)),
+    blocked: arr(st.blocked).filter(k => /^[0-9a-f]{64}$/.test(k)),
+  };
+  out.kit = Array.isArray(s.kit) ? s.kit.map(i => ({
+    id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
+    unit: str(i?.unit, 20), perPerson: !!i?.perPerson, expires: !!i?.expires, have: Math.max(0, num(i?.have)), expiry: isoDate(i?.expiry),
+    location: str(i?.location, 200), notes: str(i?.notes, 1000),
+  })) : base.kit;
+  out.contacts = arr(s.contacts).map(c => ({ id: idOf(c?.id), name: str(c?.name, 120), phone: str(c?.phone, 30), relation: str(c?.relation, 120), notes: str(c?.notes, 1000), priority: !!c?.priority }));
+  out.lists = Array.isArray(s.lists) ? s.lists.map(l => ({ id: idOf(l?.id), name: str(l?.name, 120), items: arr(l?.items).map(i => ({ id: idOf(i?.id), text: str(i?.text, 300), done: !!i?.done })) })) : base.lists;
+  out.groups = arr(s.groups).filter(g => g && typeof g.id === 'string').map(g => ({
+    ...cleanGroup(g), chat: cleanChatCfg(g.chat), syncPending: !!g.syncPending, syncRev: num(g.syncRev), sharedAt: str(g.sharedAt, 40), imported: !!g.imported,
+  }));
+  out.chat = {};
+  for (const [gid, list] of Object.entries(s.chat && typeof s.chat === 'object' ? s.chat : {})) {
+    out.chat[gid] = arr(list).slice(-500).map(m => ({
+      id: str(m?.id, 64), pk: /^[0-9a-f]{64}$/.test(m?.pk) ? m.pk : '', name: str(m?.name, 40), text: str(m?.text, 2000), ts: num(m?.ts),
+      status: m?.status === 'pending' ? 'pending' : 'sent', ...(m?.status === 'pending' && m?.ev ? { ev: m.ev } : {}),
+    }));
+  }
+  out.nostr = s.nostr && /^[0-9a-f]{64}$/.test(s.nostr.sk) && /^[0-9a-f]{64}$/.test(s.nostr.pk) ? { sk: s.nostr.sk, pk: s.nostr.pk } : undefined;
+  out.pointsCache = s.pointsCache?.lisboa ? { at: num(s.pointsCache.at), lisboa: arr(s.pointsCache.lisboa).map(cleanPoint).filter(Boolean) } : undefined;
+  out.alertsCache = s.alertsCache && Array.isArray(s.alertsCache.data) ? { at: num(s.alertsCache.at), data: s.alertsCache.data.filter(w => w && typeof w === 'object') } : null;
+  return out;
+}
 function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 1) return s; } catch {}
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 1) return cleanState(s); } catch {}
   return seed();
 }
 let S = load();
@@ -33,7 +109,7 @@ async function loadPoints() {
   try {
     const d = await (await fetch('./pontos-encontro.json')).json();
     POINTS_META = d.meta;
-    POINTS = d.points;
+    POINTS = arr(d.points).map(cleanPoint).filter(Boolean);
     if (S.pointsCache?.lisboa) POINTS = [...S.pointsCache.lisboa, ...POINTS.filter(p => p.m !== 'Lisboa')];
   } catch { /* sem cópia local: o mapa mostra só os pontos dos grupos */ }
   render();
@@ -42,10 +118,10 @@ async function refreshLisboa() {
   ui.pointsLoading = true; render();
   try {
     const d = await (await fetch(LISBOA_POINTS_URL, { cache: 'no-store' })).json();
-    const lisboa = d.features.map(f => ({
-      n: (f.properties.NOME || f.properties.DESIGNACAO || 'Ponto de encontro').trim(), f: f.properties.FREGUESIA || '',
-      m: 'Lisboa', lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], cap: f.properties.CAPACIDADE, t: 'Emergência',
-    }));
+    const lisboa = arr(d.features).map(f => cleanPoint({
+      n: str(f?.properties?.NOME || f?.properties?.DESIGNACAO).trim(), f: f?.properties?.FREGUESIA,
+      m: 'Lisboa', lat: f?.geometry?.coordinates?.[1], lng: f?.geometry?.coordinates?.[0], cap: f?.properties?.CAPACIDADE, t: 'Emergência',
+    })).filter(Boolean);
     if (!lisboa.length) throw new Error('vazio');
     S.pointsCache = { at: Date.now(), lisboa }; save();
     POINTS = [...lisboa, ...POINTS.filter(p => p.m !== 'Lisboa')];
@@ -69,7 +145,10 @@ function bearing(a, b) {
 const fmtDist = km => (km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1).replace('.', ',') + ' km');
 const fmtCoords = p => `${Number(p.lat).toFixed(5)}, ${Number(p.lng).toFixed(5)}`;
 function navLinks(p, label) {
-  const q = `${p.lat},${p.lng}`;
+  const lat = Number(p.lat), lng = Number(p.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+  p = { lat, lng };
+  const q = `${lat},${lng}`;
   return `<div class="navgo">
     <details class="menu"><summary class="btn sm">${icon('nav')} Navegar</summary>
       <div class="menu-list">
@@ -182,8 +261,10 @@ async function importFile(file) {
   let pkg;
   try { pkg = JSON.parse(await file.text()); } catch { return toast('Ficheiro inválido.'); }
   if (pkg.app !== 'ekit') return toast('Este ficheiro não é do eKit.');
-  const apply = payload => {
+  let apply = payload => {
     if (pkg.type === 'group') {
+      const chatCfg = cleanChatCfg(payload?.chat);
+      payload = { ...cleanGroup(payload), chat: chatCfg };
       const existing = findGroup(payload.id);
       if (existing) {
         mergeGroup(existing, payload);
@@ -197,7 +278,7 @@ async function importFile(file) {
       location.hash = '#/grupos';
     } else if (pkg.type === 'backup') {
       if (!confirm('Substituir TODOS os dados deste dispositivo pela cópia de segurança?')) return;
-      S = { ...seed(), ...payload, alertsCache: S.alertsCache, nostr: S.nostr, chat: S.chat };
+      S = cleanState({ ...payload, version: 1, alertsCache: S.alertsCache, nostr: S.nostr, chat: S.chat });
       toast('Cópia de segurança restaurada.');
       setTimeout(restartHub, 0);
     }
@@ -229,6 +310,27 @@ function exportIcs() {
 }
 
 // ---------- Notificações locais de validade ----------
+const native = () => !!window.Capacitor?.isNativePlatform?.();
+async function scheduleNativeReminders() {
+  const C = window.Capacitor;
+  const LN = C?.Plugins?.LocalNotifications || C?.registerPlugin?.('LocalNotifications');
+  if (!native() || !LN) return;
+  try {
+    if ((await LN.checkPermissions()).display !== 'granted' && (await LN.requestPermissions()).display !== 'granted') return;
+    const pending = await LN.getPending();
+    if (pending.notifications.length) await LN.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) });
+    const now = Date.now(), list = [];
+    S.kit.filter(i => i.expiry).forEach((i, n) => {
+      const exp = new Date(i.expiry + 'T10:00');
+      const warn = new Date(exp.getTime() - S.settings.notifyDays * 864e5);
+      if (warn > now) list.push({ id: 1000 + n * 2, title: 'Kit de emergência', body: `${i.name}: expira dentro de ${S.settings.notifyDays} dias.`, schedule: { at: warn } });
+      if (exp > now) list.push({ id: 1001 + n * 2, title: 'Kit de emergência', body: `${i.name}: expira hoje. Substitua-o.`, schedule: { at: exp } });
+    });
+    // Lembrete de revisão semestral
+    list.push({ id: 999, title: 'Revisão do kit', body: 'Passaram seis meses: reveja validades, pilhas e o plano da família.', schedule: { at: new Date(now + 182 * 864e5) } });
+    if (list.length) await LN.schedule({ notifications: list.slice(0, 60) });
+  } catch { /* plugin indisponível */ }
+}
 async function checkExpiryNotification() {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const today = new Date().toISOString().slice(0, 10);
@@ -705,7 +807,7 @@ function initMap() {
   if (!window.L) { el.innerHTML = '<p class="empty">Mapa indisponível sem internet (abra-o uma vez com rede). A lista abaixo funciona offline.</p>'; return; }
   map = L.map(el);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, crossOrigin: true, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
-  const popup = (p, title) => `<strong>${esc(title)}</strong><br>${esc(p.m || '')}${p.f ? ' · ' + esc(p.f) : ''}${p.cap ? '<br>Capacidade: ' + p.cap : ''}<br><span class="mono">${fmtCoords(p)}</span><br>${navLinks(p, title)}`;
+  const popup = (p, title) => `<strong>${esc(title)}</strong><br>${esc(p.m || '')}${p.f ? ' · ' + esc(p.f) : ''}${p.cap ? '<br>Capacidade: ' + Number(p.cap).toLocaleString('pt-PT') : ''}<br><span class="mono">${fmtCoords(p)}</span><br>${navLinks(p, title)}`;
   const bounds = [];
   POINTS.forEach(p => {
     const c = p.t === 'Tsunami' ? '#d97706' : '#2563eb';
@@ -737,6 +839,17 @@ function viewSettings() {
     <input id="nd" type="number" min="1" value="${S.settings.notifyDays}" data-change="notifyDays">
   </section>
   <section class="card">
+    <h3>Ordem dos menus</h3>
+    <p class="muted small">As quatro primeiras secções aparecem na barra inferior do telemóvel; as restantes ficam em "Mais".</p>
+    <ol class="list nav-order">${navOrder().map((k, i, o) => `
+      <li class="row ${i === 3 ? 'nav-cut' : ''}"><span class="cat-ic">${icon(ROUTES[k][1])}</span>
+        <div class="row-main"><div class="row-title">${esc(ROUTES[k][0])}</div>${i < 4 ? '<div class="row-sub">Barra principal</div>' : ''}</div>
+        <button class="btn sm" data-act="navUp" data-k="${k}" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${esc(ROUTES[k][0])}">↑</button>
+        <button class="btn sm" data-act="navDown" data-k="${k}" ${i === o.length - 1 ? 'disabled' : ''} aria-label="Descer ${esc(ROUTES[k][0])}">↓</button>
+      </li>`).join('')}</ol>
+    <button class="btn ghost" data-act="navReset">Repor ordem original</button>
+  </section>
+  <section class="card">
     <h3>Lembretes</h3>
     <div class="grid-buttons">
       <button class="btn" data-act="enableNotif" ${notif !== 'default' ? 'disabled' : ''}>${notif === 'granted' ? 'Notificações ativas' : notif === 'denied' ? 'Notificações bloqueadas' : 'Ativar notificações'}</button>
@@ -749,6 +862,7 @@ function viewSettings() {
     <label for="relays">Relays Nostr (um por linha; vazio = predefinidos)</label>
     <textarea id="relays" rows="3" data-change="relays" placeholder="${DEFAULT_RELAYS.join('\n')}">${esc((S.settings.relays || []).join('\n'))}</textarea>
     <p class="muted small">Pode usar um relay próprio ou da sua organização. Os relays só recebem mensagens cifradas.</p>
+    ${S.settings.blocked?.length ? `<p class="small">${S.settings.blocked.length} remetente(s) bloqueado(s). <button class="linkbtn" data-act="unblockAll">Desbloquear todos</button></p>` : ''}
   </section>
   <section class="card">
     <h3>Cópia de segurança</h3>
@@ -773,7 +887,6 @@ function viewSettings() {
 // Tudo o que pertence a um grupo (nome, ponto de encontro, GPS, notas, pessoas) é publicado
 // cifrado com a chave do grupo e fundido nos outros dispositivos: vence a alteração mais recente,
 // campo a campo e pessoa a pessoa. Pessoas removidas ficam como "lápide" para a remoção se propagar.
-const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes'];
 let hub = null;
 const sentState = new Map(); // id do evento de estado -> { gid, rev }
 const keying = new Set();
@@ -791,6 +904,7 @@ function groupPayload(g) {
 }
 
 function mergeGroup(g, r) {
+  r = cleanGroup(r);
   let changed = false;
   g.meta ||= {};
   for (const k of GROUP_FIELDS) {
@@ -886,6 +1000,7 @@ function startHub() {
 function restartHub() { if (hub) { hub.close(); hub = null; } startHub(); }
 
 function addMsg(gid, m) {
+  if (S.settings.blocked?.includes(m.pk)) return;
   S.chat ||= {};
   const list = (S.chat[gid] ||= []);
   const old = list.find(x => x.id === m.id);
@@ -898,13 +1013,15 @@ function addMsg(gid, m) {
 function renderChatLog() {
   const log = $('#chatlog');
   if (!log) return;
-  const msgs = S.chat?.[ui.chatGroup] || [];
+  const blocked = S.settings.blocked || [];
+  const msgs = (S.chat?.[ui.chatGroup] || []).filter(m => !blocked.includes(m.pk));
   const me = myPub();
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
   const t = ts => new Date(ts).toLocaleString('pt-PT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   log.innerHTML = msgs.length ? msgs.map(m => `
     <li class="msg ${m.pk === me ? 'me' : ''}"><div class="bubble">
-      ${m.pk === me ? '' : `<b>${esc(m.name || 'Sem nome')}</b>`}
+      ${m.pk === me ? '' : `<b>${esc(m.name || 'Sem nome')} <span class="fp" title="Identificador do dispositivo">#${esc(m.pk.slice(0, 4))}</span>
+        <button class="linkbtn fp" data-act="blockSender" data-pk="${esc(m.pk)}" data-name="${esc(m.name)}">bloquear</button></b>`}
       <p>${esc(m.text)}</p>
       <time>${t(m.ts)}${m.pk === me ? (m.status === 'pending' ? ' · por enviar' : ' · enviada') : ''}</time>
     </div></li>`).join('') : '<li class="empty">Ainda não há mensagens. Escreva a primeira.</li>';
@@ -999,7 +1116,7 @@ function viewChat() {
 // ---------- Router e eventos ----------
 // [título, ícone, ecrã, nível] — nível 1: barra principal; 0: dentro de "Mais"; 2: o próprio "Mais"
 const ROUTES = {
-  painel: ['Painel', 'home', viewDashboard, 1, ''],
+  painel: ['Painel', 'home', viewDashboard, 1, 'Resumo da sua preparação e dos avisos'],
   kit: ['Kit de emergência', 'kit', viewKit, 1, 'Lista recomendada para 72 horas de autonomia, ajustada ao seu agregado. Reveja-a a cada seis meses.'],
   mapa: ['Pontos de encontro', 'map', viewMap, 1, 'Os pontos do seu grupo e os pontos oficiais publicados pelos municípios. A distância funciona sem internet.'],
   alertas: ['Avisos', 'alert', viewAlerts, 1, 'Avisos meteorológicos do IPMA para a sua zona. Em caso de dúvida, prevalece sempre a informação oficial.'],
@@ -1061,7 +1178,7 @@ function viewAbout() {
       <div class="fact">${icon('shield')}<strong>Consentimento registado</strong><span class="muted small">Dados de saúde exigem o consentimento explícito da pessoa.</span></div>
       <div class="fact">${icon('wifioff')}<strong>Funciona offline</strong><span class="muted small">Sem rede, o essencial continua disponível.</span></div>
     </div>
-    <p class="muted small">Pode exportar ou apagar todos os seus dados a qualquer momento nas <a href="#/definicoes">Definições</a>. A eKit não usa publicidade, rastreio nem análise de utilização.</p>
+    <p class="muted small">Pode exportar ou apagar todos os seus dados a qualquer momento nas <a href="#/definicoes">Definições</a>. A eKit não usa publicidade, rastreio nem análise de utilização. <a href="privacidade.html">Ler a política de privacidade completa</a>.</p>
   </section>
 
   <section class="card">
@@ -1076,8 +1193,20 @@ function viewAbout() {
   </section>`;
 }
 
+// Ordem dos menus escolhida pela pessoa: as 4 primeiras vão para a barra inferior do telemóvel.
+function navOrder() {
+  const o = (S.settings.navOrder || []).filter(k => NAV_KEYS.includes(k));
+  return [...o, ...NAV_KEYS.filter(k => !o.includes(k))];
+}
+function moveNav(k, delta) {
+  const o = navOrder(), i = o.indexOf(k), j = i + delta;
+  if (i < 0 || j < 0 || j >= o.length) return;
+  [o[i], o[j]] = [o[j], o[i]];
+  S.settings.navOrder = o;
+}
+
 function viewMore() {
-  return `<section class="card"><ul class="list">${Object.entries(ROUTES).filter(([, v]) => v[3] === 0).map(([k, [t, ic, , , desc]]) => `
+  return `<section class="card"><ul class="list">${navOrder().slice(4).map(k => [k, ROUTES[k]]).map(([k, [t, ic, , , desc]]) => `
     <li class="row"><a class="row-link" href="#/${k}">${icon(ic)}<div class="row-main"><div class="row-title">${t}</div><div class="row-sub">${desc}</div></div><span class="chev" aria-hidden="true">›</span></a></li>`).join('')}
   </ul></section>`;
 }
@@ -1085,16 +1214,20 @@ function viewMore() {
 function render() {
   const r = route();
   const urgent = districtAlerts().filter(w => SEV[w.awarenessLevelID] >= 2).length;
-  $('#nav').innerHTML = Object.entries(ROUTES).filter(([, v]) => v[3] >= 0).map(([k, [t, ic, , lvl]]) => {
-    const current = k === r || (k === 'mais' && ROUTES[r][3] <= 0);
-    const cls = ['', 'pri', 'more'][lvl] || 'sec';
-    return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${k === 'alertas' && urgent ? `<b class="dot-count" aria-label="${urgent} avisos graves">${urgent}</b>` : ''}</a>`;
+  const order = navOrder();
+  const inMore = !order.slice(0, 4).includes(r);
+  $('#nav').innerHTML = [...order, 'mais'].map((k, i) => {
+    const [t, ic] = ROUTES[k];
+    const current = k === r || (k === 'mais' && inMore);
+    const cls = k === 'mais' ? 'more' : i < 4 ? 'pri' : 'sec';
+    return `<a href="#/${k}" class="${cls}" ${current ? 'aria-current="page"' : ''}>${icon(ic)}<span>${NAV_SHORT[k] || t}</span>${(k === 'alertas' || (k === 'mais' && !order.slice(0, 4).includes('alertas'))) && urgent ? `<b class="dot-count" aria-label="${urgent} avisos graves">${urgent}</b>` : ''}</a>`;
   }).join('');
   const title = r === 'chat' ? 'Chat · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
   document.title = r === 'painel' ? 'eKit · Preparação para emergências' : `${title} · eKit`;
   if (map && r !== 'mapa') { map.remove(); map = null; ui.mapView = null; }
   const draft = $('.chat-form input')?.value;
-  $('#main').innerHTML = pageHead(r, title) + ROUTES[r][2]();
+  $('#main').className = 'r-' + r;
+  $('#main').innerHTML = pageHead(r, title) + `<div class="content">${ROUTES[r][2]()}</div>`;
   if (r === 'mapa') initMap();
   if (r === 'chat') renderChatLog();
   if (draft) { const i = $('.chat-form input'); if (i) i.value = draft; }
@@ -1106,6 +1239,16 @@ const findGroup = id => S.groups.find(g => g.id === id);
 const findList = id => S.lists.find(l => l.id === id);
 
 const actions = {
+  blockSender: d => {
+    if (!confirm(`Bloquear "${d.name}" (#${d.pk.slice(0, 4)})? Deixa de ver as mensagens deste dispositivo. Para o retirar do grupo, crie uma nova chave e partilhe o grupo só com quem fica.`)) return 'async';
+    S.settings.blocked = [...new Set([...(S.settings.blocked || []), d.pk])];
+    save(); renderChatLog(); toast('Remetente bloqueado neste dispositivo.');
+    return 'async';
+  },
+  unblockAll: () => { S.settings.blocked = []; toast('Desbloqueados.'); },
+  navUp: d => moveNav(d.k, -1),
+  navDown: d => moveNav(d.k, 1),
+  navReset: () => { S.settings.navOrder = []; },
   rotateChat: d => {
     const g = findGroup(d.id);
     if (!confirm('Criar uma nova chave? Quem não receber o grupo partilhado de novo deixa de ler as mensagens novas.')) return 'async';
@@ -1221,7 +1364,10 @@ window.addEventListener('online', () => { render(); fetchAlerts(); startHub(); }
 window.addEventListener('offline', render);
 
 // ---------- Arranque ----------
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+// Na app nativa os ficheiros já vêm no pacote; o service worker só é usado no site.
+if ('serviceWorker' in navigator && !native()) navigator.serviceWorker.register('./sw.js');
+scheduleNativeReminders();
+document.addEventListener('visibilitychange', () => { if (document.hidden) scheduleNativeReminders(); });
 // Primeira utilização: 3 perguntas para o kit fazer sentido desde o início.
 function onboarding() {
   S.settings.onboarded = true; save();

@@ -271,3 +271,45 @@ dialog::backdrop { background: rgb(8 18 32 / .55); }
 .call-confirm .btn.big { margin: 10px 0 18px; }
 .call-confirm h3 { margin: 4px 0 2px; font-size: 1rem; }
 .call-confirm .note { margin-top: 14px; }
+
+/* Ordem dos menus e impressão digital no chat */
+.nav-order .row { gap: 8px; }
+.nav-order .nav-cut { border-bottom: 2px solid var(--accent); }
+.nav-order .btn.sm { min-width: 44px; padding: 6px; }
+.fp { font-family: var(--sans); font-weight: 400; color: var(--muted); font-size: .74rem; }
+
+/* Layout adaptado ao ecrã: sem espaço vazio */
+body { min-height: 100dvh; display: flex; flex-direction: column; }
+main { flex: 1 0 auto; width: 100%; align-content: start; }
+.content { display: grid; gap: 16px; align-content: start; }
+.content > * { min-width: 0; }
+
+@media (min-width: 900px) {
+  main, .foot, .top-inner, .nav-inner { max-width: 1160px; }
+  main { padding: 28px 24px 8px; }
+  .page-head p { max-width: 75ch; }
+
+  .r-painel .content { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .r-painel .content > .alert-banner { grid-column: 1 / -1; }
+
+  .r-kit .content, .r-guia .content, .r-listas .content, .r-grupos .content,
+  .r-contactos .content, .r-definicoes .content, .r-sobre .content { display: block; columns: 2; column-gap: 16px; }
+  .r-kit .content > *, .r-guia .content > *, .r-listas .content > *, .r-grupos .content > *,
+  .r-contactos .content > *, .r-definicoes .content > *, .r-sobre .content > * { break-inside: avoid; margin: 0 0 16px; }
+  .content > .toolbar, .content > .empty, .r-guia .content > p { column-span: all; }
+
+  .r-mapa .content { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+  .r-mapa .content > :first-child { grid-row: span 2; }
+  .r-mapa .map { height: min(72vh, 680px); }
+
+  .r-alertas .content { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+
+  .r-chat .content { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; }
+  .r-chat .content > .chat { grid-column: 1; grid-row: 1; }
+  .r-chat .content > .bitchat { grid-column: 2; grid-row: 1; }
+  .r-chat .chatlog { height: min(64vh, 640px); }
+
+  .r-mais .content { max-width: 680px; }
+}
+.top { padding-top: env(safe-area-inset-top); }
+.bubble b .linkbtn.fp { margin-left: 4px; }
