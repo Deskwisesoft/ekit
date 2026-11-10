@@ -1,0 +1,14 @@
+{
+  "name": "eKit – Kit de Emergência",
+  "short_name": "eKit",
+  "description": "Verificação do kit de emergência, validades, contactos, grupos, pontos de encontro e alertas. Funciona offline.",
+  "lang": "pt-PT",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f5f3",
+  "theme_color": "#0f4c81",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

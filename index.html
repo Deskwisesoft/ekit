@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>eKit – Kit de Emergência</title>
+  <meta name="description" content="Verificação do kit de emergência, validades, contactos, grupos, pontos de encontro e alertas. Funciona offline.">
+  <meta name="theme-color" content="#0f4c81">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous" defer></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="icon.svg" alt="" width="28" height="28"> <span>eKit</span> <span class="sep">/</span> <h1 id="title">Painel</h1></div>
+    <span id="net" class="offline" hidden>Offline</span>
+  </header>
+  <nav id="nav" aria-label="Secções"></nav>
+  <main id="main"></main>
+  <dialog id="dlg"></dialog>
+  <input id="file" type="file" accept=".json,application/json" hidden>
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
