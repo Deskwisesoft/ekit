@@ -1044,6 +1044,7 @@ function viewAbout() {
     <h3>Princípios de utilização responsável</h3>
     <ol class="principles">
       <li><div><strong>A informação oficial vem primeiro.</strong>Use a eKit para se preparar; em crise, confirme sempre nas fontes oficiais e não partilhe rumores.</div></li>
+      <li><div><strong>Ligue 112 apenas em emergência.</strong>Para dúvidas de saúde use o SNS 24 (808 24 24 24). Se ligar por engano, não desligue: explique ao operador.</div></li>
       <li><div><strong>Partilhe dados de outras pessoas só com o seu consentimento.</strong>Sobretudo dados de saúde de familiares, que são dados especialmente protegidos.</div></li>
       <li><div><strong>Mantenha o kit em dia.</strong>Reveja validades e quantidades a cada seis meses e sempre que a família mudar.</div></li>
       <li><div><strong>Combine o plano antes da emergência.</strong>Ponto de encontro, quem vai buscar quem e como comunicar sem internet.</div></li>
@@ -1153,6 +1154,43 @@ const actions = {
     localStorage.removeItem(KEY); S = seed(); save(); restartHub(); toast('Dados apagados.');
   },
 };
+
+// Antes de ligar 112: confirmação consciente + alternativas para o que não é emergência.
+// O 112 nunca fica bloqueado; só passa a exigir um toque deliberado.
+function confirm112() {
+  const d = $('#dlg');
+  const alts = EMERGENCY_NUMBERS.filter(n => n.phone !== '112');
+  d.innerHTML = `<div class="form call-confirm">
+    <h2>Ligar 112?</h2>
+    <p>O 112 é para <strong>emergências</strong>: perigo imediato para a vida, a saúde, a segurança ou os bens.</p>
+    <ul class="plain small">
+      <li>Alguém inconsciente, sem respirar ou com uma ferida grave</li>
+      <li>Incêndio, acidente grave, inundação ou desabamento</li>
+      <li>Crime a acontecer ou ameaça imediata</li>
+    </ul>
+    <a class="btn call big" href="tel:112" data-confirmed>${icon('phone')} Sim, é uma emergência · ligar 112</a>
+    <h3>Não é uma emergência?</h3>
+    <ul class="list">${alts.map(n => `<li class="row"><div class="row-main"><div class="row-title">${esc(n.name)}</div><div class="row-sub">${esc(n.note)}</div></div>
+      <a class="btn" href="${telHref(n.phone)}">${esc(n.phone.replace(/(\d{3})(?=\d)/g, '$1 '))}</a></li>`).join('')}
+      <li class="row"><div class="row-main"><div class="row-title">Avisos meteorológicos</div><div class="row-sub">Informação do IPMA para a sua zona</div></div>
+      <a class="btn" href="#/alertas" data-close>Ver avisos</a></li>
+    </ul>
+    <p class="note">Ligou por engano? <strong>Não desligue</strong>: diga ao operador que foi engano. Chamadas indevidas ocupam linhas de que alguém pode precisar.</p>
+    <div class="form-actions"><span class="spacer"></span><button type="button" class="btn" data-close>Cancelar</button></div>
+  </div>`;
+  d.querySelectorAll('[data-close], [data-confirmed]').forEach(b => b.addEventListener('click', () => setTimeout(() => d.close(), 0)));
+  d.showModal();
+  d.querySelector('[data-close].btn:not([href])')?.focus({ preventScroll: true });
+  d.scrollTop = 0;
+}
+
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href^="tel:"]');
+  if (a && a.getAttribute('href').replace(/\D/g, '') === '112' && !a.hasAttribute('data-confirmed')) {
+    e.preventDefault();
+    confirm112();
+  }
+}, true);
 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');

@@ -265,3 +265,9 @@ dialog::backdrop { background: rgb(8 18 32 / .55); }
 .bitchat.urgent { border: 2px solid var(--warn); }
 .steps { padding-left: 20px; display: grid; gap: 6px; margin: 12px 0; }
 .note { background: var(--warn-bg); color: var(--text); padding: 10px 12px; border-radius: var(--radius); border-left: 4px solid var(--warn); font-size: .9rem; }
+
+/* Confirmação antes do 112 */
+.call-confirm > p:first-of-type { margin: 6px 0 4px; }
+.call-confirm .btn.big { margin: 10px 0 18px; }
+.call-confirm h3 { margin: 4px 0 2px; font-size: 1rem; }
+.call-confirm .note { margin-top: 14px; }
