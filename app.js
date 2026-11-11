@@ -104,10 +104,12 @@ function cleanQuake(q) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(mag) || mag < 0 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) return null;
   return { t: t.slice(0, 19), lat, lng, mag, reg: str(q?.reg ?? q?.obsRegion, 80).replace(/\s+/g, ' ').trim(), sensed: !!q?.sensed };
 }
+// Serviços da zona: os três primeiros vêm do OpenStreetMap; a Proteção Civil Municipal só à mão.
+const SVC = { fire: 'Bombeiros', pmun: 'Polícia Municipal', police: 'PSP / GNR', smpc: 'Proteção Civil Municipal' };
 function cleanService(x) {
   const lat = Number(x?.lat), lng = Number(x?.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return { k: x?.k === 'police' ? 'police' : 'fire', n: str(x?.n, 160), op: str(x?.op, 120), phone: str(x?.phone, 40).replace(/[^\d+ ]/g, '').trim(), lat, lng };
+  return { k: ['police', 'pmun'].includes(x?.k) ? x.k : 'fire', n: str(x?.n, 160), op: str(x?.op, 120), phone: str(x?.phone, 40).replace(/[^\d+ ]/g, '').trim(), lat, lng };
 }
 function cleanState(s) {
   const base = seed();
@@ -137,7 +139,7 @@ function cleanState(s) {
   // Os kits novos (mochila, carro, animais) chegam uma vez a quem já usava a app.
   if (num(s.kitsV, 1) < 2) for (const it of base.kit) if (it.kit !== 'casa' && !out.kit.some(x => x.kit === it.kit && x.name === it.name)) out.kit.push(it);
   out.kitsV = 2;
-  out.contacts = arr(s.contacts).map(c => ({ id: idOf(c?.id), name: str(c?.name, 120), phone: str(c?.phone, 30), relation: str(c?.relation, 120), notes: str(c?.notes, 1000), priority: !!c?.priority }));
+  out.contacts = arr(s.contacts).map(c => ({ id: idOf(c?.id), name: str(c?.name, 120), phone: str(c?.phone, 30), relation: str(c?.relation, 120), notes: str(c?.notes, 1000), priority: !!c?.priority, svc: Object.hasOwn(SVC, c?.svc) ? c.svc : '' }));
   out.lists = Array.isArray(s.lists) ? s.lists.map(l => ({ id: idOf(l?.id), name: str(l?.name, 120), items: arr(l?.items).map(i => ({ id: idOf(i?.id), text: str(i?.text, 300), done: !!i?.done })) })) : base.lists;
   // Listas novas (documentos, vizinhos) chegam uma vez a quem já usava a app.
   if (num(s.listsV, 1) < 2) for (const l of base.lists) if (!out.lists.some(x => x.name === l.name)) out.lists.push(l);
@@ -302,7 +304,8 @@ async function findServices() {
   try {
     const d = await overpass(`[out:json][timeout:20];nwr[amenity~"^(fire_station|police)$"](around:15000,${la},${ln});out tags center 200;`, 25000);
     const list = (d?.elements || []).map(e => {
-      const t = e.tags || {}, k = t.amenity === 'police' ? 'police' : 'fire';
+      const t = e.tags || {};
+      const k = t.amenity !== 'police' ? 'fire' : /municipal/i.test(`${t.name || ''} ${t.operator || ''} ${t.official_name || ''}`) ? 'pmun' : 'police';
       return cleanService({ k, n: t.name || t.official_name || (k === 'fire' ? 'Bombeiros' : 'Posto policial'), op: t.operator || '',
         phone: String(t.phone || t['contact:phone'] || '').split(/[;,]/)[0], lat: e.lat ?? e.center?.lat, lng: e.lon ?? e.center?.lon });
     }).filter(Boolean);
@@ -466,7 +469,7 @@ async function shareGroup(g) {
     const link = `${SITE_URL}#/entrar/${code}`;
     show(`<p>Dê este código a cada membro:</p>
       <p class="invite-code" aria-label="Código">${code}</p>
-      <p class="muted small">Válido 24 horas. Na eKit: Grupos → Entrar com código.</p>
+      <p class="muted small">Válido 24 horas.</p>
       <div class="grid-buttons"><button type="button" class="btn primary" data-copy>Copiar código</button>
       ${navigator.share ? '<button type="button" class="btn" data-share>Enviar…</button>' : ''}</div>`);
     d.querySelector('[data-copy]').onclick = () => navigator.clipboard?.writeText(code).then(() => toast('Código copiado.'), () => toast(code));
@@ -926,12 +929,11 @@ function viewKit() {
       <h2>${esc(tab.name)}</h2>
       <p class="muted">${esc(tab.desc)}</p>
       ${expN ? `<p class="small"><button class="badge warn linkish" data-act="kitFilter" data-v="${f === 'expiring' ? 'all' : 'expiring'}">${f === 'expiring' ? 'Ver tudo' : `${expN} a expirar · ver`}</button></p>` : ''}
-      <p class="small"><strong>${essOk === ess.length && ess.length ? 'Essenciais completos' : `Essenciais: ${essOk} de ${ess.length}`}</strong>${missing ? ` · faltam ${missing} no total` : ''}${tab.id !== 'animais' ? ` · para ${S.settings.household} pessoa(s) · <a href="#/definicoes">alterar</a>` : ''}</p>
+      <p class="small"><strong>${essOk === ess.length && ess.length ? 'Essenciais completos' : `Essenciais: ${essOk} de ${ess.length}`}</strong>${tab.id !== 'animais' ? ` · para ${S.settings.household} pessoa(s) · <a href="#/definicoes">alterar</a>` : ''}</p>
     </div>
   </section>
-  ${tab.id === 'animais' && !S.groups.some(g => livePets(g).length) ? '<p class="muted small kit-help">Se não tem animais, pode ignorar este kit.</p>' : ''}
+  ${tab.id === 'animais' && !S.groups.some(g => livePets(g).length) ? '<p class="muted small kit-help">Sem animais? Ignore este kit.</p>' : ''}
   <div class="kit-bar">
-    <p class="muted small">Toque em <strong>Tenho</strong> quando já tiver. Toque no nome para ver como escolher.</p>
     <label class="switch"><input type="checkbox" data-act="kitFilter" data-v="${onlyMissing ? 'all' : 'missing'}" ${onlyMissing ? 'checked' : ''}> Só o que falta${missing ? ` (${missing})` : ''}</label>
   </div>
   ${essShow.length ? `<details class="card fold" data-fold="ess-${tab.id}" ${isOpen('ess-' + tab.id, true) ? 'open' : ''}>
@@ -989,12 +991,12 @@ function viewContacts() {
   </section>
   <section class="card">
     <div class="toolbar"><h3>Os meus contactos</h3><button class="btn primary" data-act="addContact">+ Contacto</button></div>
-    ${S.contacts.length ? `<ul class="list">${S.contacts.map(c => `
+    ${S.contacts.some(c => !c.svc) ? `<ul class="list">${S.contacts.filter(c => !c.svc).map(c => `
       <li class="row"><div class="row-main" data-act="editContact" data-id="${c.id}">
         <div class="row-title">${esc(c.name)}${c.priority ? ' <span class="badge">favorito</span>' : ''}</div>
         <div class="row-sub">${esc([c.relation, c.notes].filter(Boolean).join(' · '))}</div>
       </div>${c.phone ? `<a class="btn" href="${telHref(c.phone)}" aria-label="Ligar a ${esc(c.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>`
-      : '<p class="muted">Família, vizinhos, médico… Os favoritos aparecem no Painel.</p>'}
+      : '<p class="muted">Família, vizinhos, médico.</p>'}
     ${S.groups.map(g => {
       const ms = liveMembers(g).filter(m => m.name);
       return ms.length ? `<h4 class="sub-h">${icon('users')} Grupo: ${esc(g.name)}</h4>
@@ -1003,26 +1005,25 @@ function viewContacts() {
         <div class="row-sub">${esc(m.role || '')}${m.phone ? '' : (m.role ? ' · ' : '') + 'sem telefone'}</div>
       </div>${m.phone ? `<a class="btn" href="${telHref(m.phone)}" aria-label="Ligar a ${esc(m.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>` : '';
     }).join('')}
-    ${S.groups.some(g => liveMembers(g).length) ? '<p class="muted small">Os contactos dos grupos atualizam-se com o grupo. Edite-os aqui ou em Grupos.</p>' : ''}
   </section>
   <section class="card">
-    <h3>Bombeiros e polícia perto de si</h3>
-    ${S.services ? `
-      <h4 class="sub-h">${icon('alert')} Bombeiros</h4>
-      ${nearestServices('fire', 3).length ? `<ul class="list">${nearestServices('fire', 3).map(serviceRow).join('')}</ul>` : '<p class="muted small">Nenhum encontrado.</p>'}
-      <h4 class="sub-h">${icon('users')} Polícia (PSP / GNR)</h4>
-      ${nearestServices('police', 3).length ? `<ul class="list">${nearestServices('police', 3).map(serviceRow).join('')}</ul>` : '<p class="muted small">Nenhuma encontrada.</p>'}
-      <p class="muted small">Guardado em ${new Date(S.services.at).toLocaleDateString('pt-PT')} para usar sem internet. Fonte: OpenStreetMap (confirme os números).</p>`
-      : '<p class="muted small">Encontra os quartéis e esquadras mais próximos e guarda os telefones para usar sem internet.</p>'}
-    <p class="note small">Em perigo imediato ligue <strong>112</strong>. Estes números são para situações não urgentes.</p>
+    <h3>Números da sua zona</h3>
+    ${Object.keys(SVC).map(k => {
+      const found = k === 'smpc' ? [] : nearestServices(k, 2), mine = S.contacts.filter(c => c.svc === k);
+      return `<h4 class="sub-h">${icon(k === 'fire' ? 'flame' : k === 'smpc' ? 'shield' : 'users')} ${SVC[k]}</h4>
+      ${found.length || mine.length ? `<ul class="list">${mine.map(c => `<li class="row"><div class="row-main" data-act="editContact" data-id="${c.id}"><div class="row-title">${esc(c.name)}</div><div class="row-sub">Guardado por si</div></div>${c.phone ? `<a class="btn" href="${telHref(c.phone)}" aria-label="Ligar para ${esc(c.name)}">${icon('phone')} ${esc(c.phone)}</a>` : ''}</li>`).join('')}${found.map(serviceRow).join('')}</ul>` : ''}
+      ${mine.some(c => c.phone) || found.some(x => x.s.phone) ? '' : `<button class="btn ghost sm" data-act="addSvc" data-v="${k}">+ Acrescentar o número</button>`}`;
+    }).join('')}
+    ${S.services ? `<p class="muted small">Fonte: OpenStreetMap (${new Date(S.services.at).toLocaleDateString('pt-PT')}). Confirme os números no site da sua câmara.</p>` : ''}
+    <p class="note small">Para urgências, ligue <strong>112</strong>.</p>
     <button class="btn" data-act="findServices" ${ui.servicesLoading ? 'disabled' : ''}>${icon('pin')} ${ui.servicesLoading ? 'A procurar…' : S.services ? 'Atualizar perto de mim' : 'Procurar perto de mim'}</button>
-    <p class="muted small">Envia a posição aproximada (cerca de 1 km) ao OpenStreetMap.</p>
+    <p class="muted small">Envia a posição aproximada (~1 km).</p>
   </section>`;
 }
-function contactForm(c) {
+function contactForm(c, preset) {
   openForm({
-    title: c ? 'Editar contacto' : 'Novo contacto',
-    values: c || {},
+    title: c ? 'Editar contacto' : preset?.svc ? SVC[preset.svc] : 'Novo contacto',
+    values: c || preset || {},
     fields: [
       { k: 'name', label: 'Nome', required: true },
       { k: 'phone', label: 'Telefone', type: 'tel' },
@@ -1030,7 +1031,7 @@ function contactForm(c) {
       { k: 'notes', more: 'Mais detalhes', label: 'Notas', type: 'textarea' },
       { k: 'priority', label: 'Favorito (mostrar no painel)', type: 'checkbox' },
     ],
-    onSave(v) { if (c) Object.assign(c, v); else S.contacts.push({ id: uid(), ...v }); },
+    onSave(v) { if (c) Object.assign(c, v); else S.contacts.push({ id: uid(), svc: preset?.svc || '', ...v }); },
     onDelete: c && (() => { S.contacts = S.contacts.filter(x => x !== c); }),
   });
 }
@@ -1039,7 +1040,7 @@ function viewGroups() {
   return `
   ${S.groups.length ? '' : `<section class="card">
     <h3>Comece pela sua família</h3>
-    <p class="muted">Quem vive consigo e onde se encontram. Demora um minuto.</p>
+    <p class="muted">Demora um minuto.</p>
     <div class="grid-buttons"><button class="btn primary" data-act="wizard" data-v="1">Começar</button><button class="btn" data-act="joinGroup">Tenho um código</button></div>
   </section>`}
   ${S.groups.length ? S.groups.map(g => `
@@ -1084,7 +1085,6 @@ function viewGroups() {
     : ''}
   ${S.groups.length ? `<details class="card fold" data-fold="more-groups" ${isOpen('more-groups', false) ? 'open' : ''}>
     <summary>${icon('users')}<span class="fold-t">Outros grupos e partilha</span></summary>
-    <p class="muted small">Vizinhos, condomínio ou trabalho: cada grupo tem o seu código.</p>
     <div class="grid-buttons"><button class="btn" data-act="addGroup">+ Novo grupo</button><button class="btn" data-act="joinGroup">Entrar com código</button><a class="btn" href="#/cartao">Cartão para imprimir</a></div>
   </details>` : ''}`;
 }
@@ -1290,7 +1290,7 @@ function viewAlerts() {
       <li class="row"><div class="row-main"><div class="row-title">Hoje ${fireBadge(fr.today)}</div></div></li>
       ${fr.tomorrow ? `<li class="row"><div class="row-main"><div class="row-title">Amanhã ${fireBadge(fr.tomorrow)}</div></div></li>` : ''}</ul>
       <p class="muted small">${fr.own ? 'No concelho onde está' : 'Na capital de distrito (use a sua localização para o seu concelho)'}. Fonte: IPMA.${fr.today >= 3 ? ' Não faça queimadas nem use máquinas que façam faíscas.' : ''}</p>`
-      : '<p class="muted small">Sem dados para esta zona. Carregue em Atualizar com internet.</p>'; })()}
+      : '<p class="muted small">Sem dados para esta zona.</p>'; })()}
     <p class="small">Incêndios ativos: <a href="https://fogos.pt" target="_blank" rel="noopener">fogos.pt</a> · <a href="https://prociv.gov.pt/pt/home/ocorrencias/" target="_blank" rel="noopener">ANEPC</a></p>
   </section>
   <section class="card">
@@ -1298,8 +1298,8 @@ function viewAlerts() {
     ${(() => { const qs = recentQuakes(7); return qs.length ? `<ul class="list">${qs.slice(0, 8).map(q => `<li class="row"><div class="row-main">
       <div class="row-title">Magnitude ${q.mag.toFixed(1).replace('.', ',')} <span class="badge ${q.mag >= 4 ? 'bad' : q.mag >= 3 ? 'warn' : ''}">${esc(q.reg)}</span>${q.sensed ? ' <span class="badge">sentido</span>' : ''}</div>
       <div class="row-sub">${esc(quakeWhen(q))}${q.d != null ? ' · a ' + fmtDist(q.d) + ' de si' : ''}</div></div></li>`).join('')}</ul>`
-      : '<p class="muted small">Sem sismos de magnitude 2,5 ou superior nos últimos 7 dias' + (myPos() ? ' perto de si' : '') + '.</p>'; })()}
-    <p class="muted small">Fonte: IPMA (dados preliminares). Sismo forte? <a href="#/emergencia">Modo emergência →</a></p>
+      : '<p class="muted small">Sem sismos nos últimos 7 dias' + (myPos() ? ' perto de si' : '') + '.</p>'; })()}
+    <p class="muted small">Fonte: IPMA.</p>
   </section>
   <details class="card fold" data-fold="sources" ${isOpen('sources', false) ? 'open' : ''}>
     <summary>${icon('shield')}<span class="fold-t">Fontes oficiais</span></summary>
@@ -1332,7 +1332,7 @@ function viewMap() {
         <div class="row-sub">${navLinks(p, p.n)}</div>
         ${p.mine ? '' : `<div class="row-sub"><button class="btn sm ghost" data-act="useOfficial" data-i="${p.i}">${icon('users')} Usar no grupo</button></div>`}
       </div></li>`).join('')}</ul>`
-      : '<p class="muted">Carregue em "Onde estou". Funciona sem internet.</p>'}
+      : '<p class="muted">Carregue em "Onde estou".</p>'}
   </section>
   <section class="card">
     <h3>Procurar pontos oficiais</h3>
@@ -1342,7 +1342,6 @@ function viewMap() {
   <section class="card">
     <h3>Mapa sem internet</h3>
     ${`
-    <p class="muted small">Guarda o mapa à volta da sua posição e dos pontos de encontro dos grupos, para ver sem rede.</p>
     <div class="progress" ${ui.tilesTotal ? '' : 'hidden'}><i id="tiles-bar"></i></div>
     <p class="small" id="tiles-msg">${S.settings.mapSaved ? `Zona guardada em ${new Date(S.settings.mapSaved).toLocaleDateString('pt-PT')} (${S.settings.mapSavedN} partes).` : ''}</p>
     <button class="btn" data-act="saveMap" ${ui.tilesTotal ? 'disabled' : ''}>${icon('map')} ${S.settings.mapSaved ? 'Atualizar mapa guardado' : 'Guardar mapa da minha zona'}</button>`}
@@ -1523,12 +1522,11 @@ function viewSettings() {
       <button class="btn" data-act="enableNotif" ${notif !== 'default' ? 'disabled' : ''}>${notif === 'granted' ? 'Notificações ativas' : notif === 'denied' ? 'Notificações bloqueadas' : 'Ativar notificações'}</button>
       <button class="btn" data-act="exportIcs">Validades e simulacro no calendário</button>
     </div>
-    <p class="muted small">Com a app fechada, use o calendário.</p>
   </section>
   <section class="card form">
     <h3>Rádio</h3>
     <p><strong>Antena 1 · ${esc(IPMA_AREAS[S.settings.district])}</strong><br><span class="small">${esc(RADIO_A1[S.settings.district] || '')}</span></p>
-    <p class="muted small">FM em MHz, OM em kHz. Fonte: <a href="${RADIO_SOURCE}" target="_blank" rel="noopener">RTP</a>. Num apagão a informação oficial chega pela rádio: experimente já num rádio a pilhas.</p>
+    <p class="muted small">Fonte: <a href="${RADIO_SOURCE}" target="_blank" rel="noopener">RTP</a>.</p>
     <label for="radio">Rádio local que também quer ter à mão (opcional)</label>
     <input id="radio" data-change="radio" value="${esc(S.settings.radio)}" placeholder="ex.: Rádio da sua cidade · 90.0 FM" maxlength="60">
   </section>
@@ -1849,22 +1847,22 @@ function viewChat() {
 // [título, ícone, ecrã, nível, descrição]
 const ROUTES = {
   painel: ['Início', 'home', viewDashboard, 1, ''],
-  preparar: ['Preparar', 'list', viewPrepare, 1, 'O seu plano, passo a passo.'],
-  kit: ['Kit de emergência', 'kit', viewKit, 1, 'Casa, mochila de evacuação, carro e animais.'],
-  mapa: ['Pontos de encontro', 'map', viewMap, 1, 'Do seu grupo e oficiais dos municípios.'],
-  alertas: ['Avisos', 'alert', viewAlerts, 1, 'IPMA, para a sua zona.'],
-  contactos: ['Contactos', 'phone', viewContacts, 0, 'Emergência e pessoais'],
-  grupos: ['Família', 'users', viewGroups, 0, 'Pessoas, animais e pontos de encontro'],
-  guia: ['O que fazer', 'book', viewGuide, 0, 'Guias para cada situação e listas de verificação'],
-  definicoes: ['Definições', 'settings', viewSettings, 0, 'Agregado, lembretes, dados'],
-  sobre: ['Sobre e princípios', 'shield', viewAbout, 0, 'Missão, princípios, privacidade'],
+  preparar: ['Preparar', 'list', viewPrepare, 1, 'O seu plano'],
+  kit: ['Kit de emergência', 'kit', viewKit, 1, 'Casa, mochila, carro, animais'],
+  mapa: ['Pontos de encontro', 'map', viewMap, 1, 'Da família e oficiais'],
+  alertas: ['Avisos', 'alert', viewAlerts, 1, 'IPMA, sismos, incêndios'],
+  contactos: ['Contactos', 'phone', viewContacts, 0, 'Números úteis'],
+  grupos: ['Família', 'users', viewGroups, 0, 'Pessoas e animais'],
+  guia: ['O que fazer', 'book', viewGuide, 0, 'Guias e listas'],
+  definicoes: ['Definições', 'settings', viewSettings, 0, 'Agregado, rádio, dados'],
+  sobre: ['Sobre e privacidade', 'shield', viewAbout, 0, 'Missão e dados'],
   mais: ['Menu', 'more', viewMore, 2, ''],
 };
-ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Cifrado entre os membros.'];
+ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, ''];
 ROUTES.emergencia = ['Modo emergência', 'alert', viewEmergency, -1, 'O essencial, em poucos toques.'];
 ROUTES.agir = ['O que fazer agora', 'alert', viewAct, -1, ''];
-ROUTES.plano = ['Plano da família', 'list', viewPlan, -1, 'Quem faz o quê numa emergência. Igual para toda a família.'];
-ROUTES.cartao = ['Cartão da família', 'users', viewCard, -1, 'Para imprimir e guardar no kit e na carteira.'];
+ROUTES.plano = ['Plano da família', 'list', viewPlan, -1, ''];
+ROUTES.cartao = ['Cartão da família', 'users', viewCard, -1, 'Para imprimir'];
 const route = () => {
   const r = location.hash.slice(2);
   if (r.startsWith('chat/')) { ui.chatGroup = r.slice(5); return 'chat'; }
@@ -1888,7 +1886,7 @@ function pageHead(r, title) {
   if (r === 'emergencia') return '<h1 class="sr-only">Modo emergência</h1>';
   const desc = ROUTES[r][4];
   const back = { plano: ['#/preparar', 'Preparar'], cartao: ['#/preparar', 'Preparar'], definicoes: ['#/mais', 'Menu'], sobre: ['#/mais', 'Menu'], chat: ['#/grupos', 'Família'], contactos: ['#/mais', 'Menu'], guia: ['#/mais', 'Menu'] }[r];
-  return `<header class="page-head">${back ? `<a class="back" href="${back[0]}">‹ ${back[1]}</a>` : ''}<h1>${esc(title)}</h1>${desc ? `<p>${esc(desc)}</p>` : ''}</header>`;
+  return `<header class="page-head">${back ? `<a class="back" href="${back[0]}">‹ ${back[1]}</a>` : ''}<h1>${esc(title)}</h1></header>`;
 }
 
 function viewAbout() {
@@ -2012,7 +2010,6 @@ function viewAct() {
   <div class="dots" aria-hidden="true">${steps.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</div>
   ${end && g.prep ? `<section class="card step-card">
       <p class="step-text">Terminou.</p>
-      <p class="muted">Marque como feito para avançar no seu plano.</p>
       <button class="btn primary wide" data-act="guideDone">Marcar como feito ✓</button>
     </section>` : end ? `<section class="card step-card">
       <p class="step-text">Fez todos os passos.</p>
@@ -2059,7 +2056,8 @@ function viewEmergency() {
   const calls = [
     ...allMembers().filter(m => m.phone && !(m.pk && m.pk === myPub())).map(m => [m.name, m.phone]),
     ...S.contacts.filter(c => c.priority && c.phone).map(c => [c.name, c.phone]),
-    ...['fire', 'police'].flatMap(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => [s.n, s.phone])),
+    ...S.contacts.filter(c => c.svc && c.phone && !c.priority).map(c => [c.name, c.phone]),
+    ...['fire', 'pmun', 'police'].flatMap(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => [s.n, s.phone])),
   ].slice(0, 10);
   const sug = suggestedGuides();
   const tiles = [...sug.map(x => GUIDES.find(g => g.id === x.id)), ...GUIDES.filter(g => !g.prep && !sug.some(x => x.id === g.id))];
@@ -2074,8 +2072,7 @@ function viewEmergency() {
       <button class="btn ok" data-act="status" data-v="ok">✓ Estou bem</button>
       <button class="btn help" data-act="status" data-v="help">! Preciso de ajuda</button>
     </div>
-    <p class="muted small">${nums.length ? `Abre as SMS para ${nums.length} pessoa(s), com ${pos ? 'a sua localização' : 'o ponto de encontro'}.` : 'Abre as SMS com a mensagem pronta: escolha a quem enviar.'}
-      As SMS costumam funcionar quando a internet falha.</p>
+    <p class="muted small">${nums.length ? `SMS para ${nums.length} pessoa(s)${pos ? ', com a sua localização' : ''}.` : 'SMS pronta: escolha a quem enviar.'}</p>
   </section>
   <section class="card">
     <h3>Para onde ir</h3>
@@ -2087,7 +2084,7 @@ function viewEmergency() {
       <strong>${esc(near.p.n)}</strong>${navLinks(near.p, near.p.n)}</div></div>` : ''}
     ${tsu && tsu.d <= 5 ? `<p class="note small"><strong>Está perto da costa.</strong> Depois de um sismo forte, afaste-se do mar a pé e suba: ponto de tsunami mais próximo a ${fmtDist(tsu.d)} (${esc(tsu.p.n)}).</p>` : ''}
     ${!pos && !meet.length ? `<button class="btn primary wide" data-act="useLocation">${icon('pin')} Encontrar o ponto mais próximo</button>
-      <p class="muted small">Usa a sua localização, só neste telemóvel.</p>` : ''}
+` : ''}
     ${pos && !meet.length && !alts.length && !nearOk ? `<p>Não há pontos de encontro oficiais publicados perto de si. Afaste-se do perigo e siga as indicações da Proteção Civil e da rádio.</p>
       <a class="btn" href="#/mapa">${icon('map')} Abrir o mapa</a>` : ''}
   </section>
@@ -2116,13 +2113,13 @@ function viewEmergency() {
 // ---------- Plano da família (fica no grupo e é igual para todos) ----------
 function viewPlan() {
   const g = S.groups[0];
-  if (!g) return `<section class="card"><h3>Comece pela sua família</h3><p class="muted">O plano fica guardado com a família.</p><button class="btn primary" data-act="wizard" data-v="1">Começar</button></section>`;
+  if (!g) return `<section class="card"><h3>Comece pela sua família</h3><button class="btn primary" data-act="wizard" data-v="1">Começar</button></section>`;
   const done = PLAN_FIELDS.filter(([k]) => g[k]).length;
   if (!done) return `
   <section class="card empty-state">
     ${icon('users')}
     <h3>Ainda não combinaram nada</h3>
-    <p class="muted">Sentem-se 10 minutos e respondam a ${PLAN_FIELDS.length} perguntas simples: quem vai buscar as crianças, onde está a mochila, a quem ligar.</p>
+    <p class="muted">${PLAN_FIELDS.length} perguntas, 10 minutos, todos juntos.</p>
     <button class="btn primary wide" data-act="editPlan" data-id="${g.id}">Combinar o plano</button>
   </section>`;
   return `
@@ -2130,7 +2127,7 @@ function viewPlan() {
     <h3>O que combinámos · ${done} de ${PLAN_FIELDS.length}</h3>
     <ul class="plan-list">${PLAN_FIELDS.map(([k, label]) => `<li class="${g[k] ? 'done' : ''}">${icon(g[k] ? 'checkCircle' : 'circle')}<div><span class="label">${esc(label)}</span><p>${g[k] ? esc(g[k]) : '<span class="muted">Por combinar</span>'}</p></div></li>`).join('')}</ul>
     <button class="btn primary wide" data-act="editPlan" data-id="${g.id}">${done ? 'Editar o plano' : 'Combinar o plano'}</button>
-    <p class="muted small">${isShared(g) ? 'O plano é partilhado com a família e atualiza-se em todos os telemóveis.' : 'Partilhe a família (em Família) para todos terem o mesmo plano.'} Também sai no cartão para imprimir.</p>
+    ${isShared(g) ? '' : '<p class="muted small">Partilhe a família para todos terem o mesmo plano.</p>'}
   </section>`;
 }
 function planForm(g) {
@@ -2138,7 +2135,7 @@ function planForm(g) {
   openForm({
     title: 'Plano da família',
     values: g,
-    fields: [{ type: 'info', html: 'Combinem isto juntos, à mesa. Uma frase chega.' }, ...PLAN_FIELDS.map(([k, label, ph]) => ({ k, label, type: 'textarea', ph }))],
+    fields: [...PLAN_FIELDS.map(([k, label, ph]) => ({ k, label, type: 'textarea', ph }))],
     onSave(v) {
       const now = Date.now();
       for (const [k] of PLAN_FIELDS) if (String(v[k] ?? '') !== String(g[k] ?? '')) { g[k] = str(v[k], 500); (g.meta ||= {})[k] = now; }
@@ -2173,7 +2170,8 @@ function viewCard() {
   <section class="card family-card">
     <h3>Outros números</h3>
     <table>${EMERGENCY_NUMBERS.filter(n => n.phone !== '112').map(n => `<tr><th>${esc(n.name)}</th><td>${esc(n.phone)}</td></tr>`).join('')}
-      ${['fire', 'police'].flatMap(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => `<tr><th>${esc(s.n)}</th><td>${esc(s.phone)}</td></tr>`)).join('')}
+      ${S.contacts.filter(c => c.svc && c.phone).map(c => `<tr><th>${esc(c.name)}</th><td>${esc(c.phone)}</td></tr>`).join('')}
+      ${['fire', 'pmun', 'police'].flatMap(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => `<tr><th>${esc(s.n)}</th><td>${esc(s.phone)}</td></tr>`)).join('')}
       ${S.contacts.filter(c => c.priority && c.phone).map(c => `<tr><th>${esc(c.name)}</th><td>${esc(c.phone)}</td></tr>`).join('')}</table>
   </section>`;
 }
@@ -2277,6 +2275,7 @@ const actions = {
     if (!was && isEssential(i) && ess.every(hasItem)) toast(`${KITS.find(k => k.id === (i.kit || 'casa')).name}: essenciais prontos.`);
   },
   addContact: () => contactForm(),
+  addSvc: d => contactForm(null, { svc: d.v, name: SVC[d.v] + ' de ', relation: SVC[d.v], priority: true }),
   editContact: d => contactForm(S.contacts.find(c => c.id === d.id)),
   addGroup: () => groupForm(),
   editGroup: d => groupForm(findGroup(d.id)),
@@ -2355,8 +2354,10 @@ function confirm112() {
     <h3>Não é uma emergência?</h3>
     <ul class="list">${alts.map(n => `<li class="row"><div class="row-main"><div class="row-title">${esc(n.name)}</div><div class="row-sub">${esc(n.note)}</div></div>
       <a class="btn" href="${telHref(n.phone)}">${esc(n.phone.replace(/(\d{3})(?=\d)/g, '$1 '))}</a></li>`).join('')}
-      ${['fire', 'police'].map(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => `<li class="row"><div class="row-main"><div class="row-title">${esc(s.n)}</div>
-        <div class="row-sub">${k === 'fire' ? 'Bombeiros mais próximos' : 'Polícia mais próxima'} · assuntos não urgentes</div></div><a class="btn" href="${telHref(s.phone)}">${esc(s.phone)}</a></li>`).join('')).join('')}
+      ${S.contacts.filter(c => c.svc && c.phone).map(c => `<li class="row"><div class="row-main"><div class="row-title">${esc(c.name)}</div>
+        <div class="row-sub">${SVC[c.svc]} · assuntos não urgentes</div></div><a class="btn" href="${telHref(c.phone)}">${esc(c.phone)}</a></li>`).join('')}
+      ${['fire', 'pmun', 'police'].map(k => nearestServices(k, 1).filter(x => x.s.phone).map(({ s }) => `<li class="row"><div class="row-main"><div class="row-title">${esc(s.n)}</div>
+        <div class="row-sub">${SVC[k]} · assuntos não urgentes</div></div><a class="btn" href="${telHref(s.phone)}">${esc(s.phone)}</a></li>`).join('')).join('')}
       <li class="row"><div class="row-main"><div class="row-title">Avisos meteorológicos</div><div class="row-sub">Informação do IPMA para a sua zona</div></div>
       <a class="btn" href="#/alertas" data-close>Ver avisos</a></li>
     </ul>
@@ -2451,12 +2452,12 @@ function wzRender() {
   const others = w.people.filter(p => p.name);
   let body = '';
   if (w.step === 1) body = `<h2>Quem vive consigo?</h2>
-    <p class="muted">Serve para calcular o kit e para avisar a família numa emergência.</p>
+    <p class="muted">Para calcular o kit e avisar a família.</p>
     <label for="wz-me">O seu nome</label><input id="wz-me" name="myName" value="${esc(w.myName)}" autocomplete="given-name">
     <label for="wz-hh">Quantas pessoas vivem em casa, contando consigo?</label><input id="wz-hh" name="household" type="number" min="1" inputmode="numeric" value="${w.household}">
     <span class="label wz-label">Outras pessoas (opcional)</span>
     ${w.people.map((p, i) => `<div class="wz-person"><input name="pn${i}" placeholder="Nome" value="${esc(p.name || '')}" aria-label="Nome da pessoa ${i + 1}" autocomplete="off"><input name="pp${i}" type="tel" placeholder="Telemóvel" value="${esc(p.phone || '')}" aria-label="Telemóvel da pessoa ${i + 1}" autocomplete="off"></div>`).join('')}
-    <p class="muted small">Pode acrescentar mais pessoas e animais depois, em Família.</p>`;
+`;
   if (w.step === 2) body = `<h2>Onde se encontram?</h2>
     <p class="muted">Se não puderem voltar a casa, todos vão para este sítio.</p>
     <div class="wz-opts">
@@ -2473,7 +2474,7 @@ function wzRender() {
       <li>${icon(w.place ? 'checkCircle' : 'circle')}<span>${w.place ? 'Ponto de encontro: ' + esc(w.place.name) : 'Ponto de encontro: pode definir depois'}</span></li>
     </ul>
     <label for="wz-d">Zona dos avisos</label><select id="wz-d" name="district">${Object.entries(IPMA_AREAS).map(([k, v]) => `<option value="${k}" ${k === w.district ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
-    <p class="muted small">Fica tudo guardado neste telemóvel. A seguir mostramos o seu plano em 6 passos.</p>`;
+    <p class="muted small">Fica tudo neste telemóvel.</p>`;
   d.innerHTML = `<form class="form wz"><div class="wz-head"><span class="label">Passo ${w.step} de 3</span><div class="dots" aria-hidden="true">${dots}</div></div>
     ${body}
     <div class="form-actions">
@@ -2535,7 +2536,7 @@ function pickOnMap(start, cb) {
   if (!window.L) return toast('O mapa precisa de internet da primeira vez.');
   let d = $('#picker');
   if (!d) { d = document.createElement('dialog'); d.id = 'picker'; document.body.append(d); }
-  d.innerHTML = `<div class="form"><h2>Escolher no mapa</h2><p class="muted small">Arraste e aproxime o mapa até o alvo ficar no local.</p>
+  d.innerHTML = `<div class="form"><h2>Escolher no mapa</h2><p class="muted small">Arraste o mapa até ao alvo.</p>
     <div class="pick-wrap"><div id="pick-map"></div><span class="pick-target" aria-hidden="true"></span></div>
     <div class="form-actions"><button type="button" class="btn ghost" data-x>Cancelar</button><span class="spacer"></span><button type="button" class="btn primary" data-ok>Usar este local</button></div></div>`;
   d.showModal();
