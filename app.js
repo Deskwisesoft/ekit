@@ -219,14 +219,14 @@ function navLinks(p, label) {
   p = { lat, lng };
   const q = `${lat},${lng}`;
   return `<div class="navgo">
-    <details class="menu"><summary class="btn sm">${icon('nav')} Navegar</summary>
+    <details class="menu"><summary class="btn sm">${icon('nav')} Ir para lá</summary>
       <div class="menu-list">
         <a href="geo:${q}?q=${q}(${encodeURIComponent(label || '')})">App de mapas do telemóvel</a>
         <a href="https://www.google.com/maps/dir/?api=1&destination=${q}" target="_blank" rel="noopener">Google Maps</a>
         <a href="https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lng}#map=17/${p.lat}/${p.lng}" target="_blank" rel="noopener">OpenStreetMap</a>
+        <button type="button" data-act="copy" data-v="${fmtCoords(p)}">Copiar as coordenadas</button>
       </div>
     </details>
-    <button class="btn sm" data-act="copy" data-v="${fmtCoords(p)}">${icon('copy')} Copiar GPS</button>
   </div>`;
 }
 function locate(then) {
@@ -865,7 +865,11 @@ function planSteps() {
     { t: 'A sua família', done: S.groups.length > 0 && (people > 1 || S.contacts.length > 0 || S.settings.household === 1), sub: people ? `${people} pessoa(s)` : 'Quem vive consigo', ...(S.groups.length ? { href: '#/grupos' } : { act: 'wizard', v: 1 }) },
     { t: 'Ponto de encontro', done: !!g, sub: g ? (g.meetingPoint || fmtCoords(g)) : 'Onde a família se encontra', ...(S.groups[0] ? (g ? { href: '#/grupos' } : { act: 'editMeetMain', id: S.groups[0].id }) : { act: 'wizard', v: 2 }) },
     { t: 'Plano da família', done: planN >= 4, sub: planN ? `${planN} de ${PLAN_FIELDS.length} combinados` : 'Quem faz o quê, onde estão as coisas', ...(g0 ? { href: '#/plano' } : { act: 'wizard', v: 1 }) },
-    { t: 'Kit de casa e mochila', done: essOk === ess.length && ess.length > 0, sub: `Essenciais: ${essOk} de ${ess.length}`, href: '#/kit' },
+    (() => {
+      const ks = ['casa', 'mochila'].map(id => { const e = kitOf(id).filter(isEssential); return { id, name: KITS.find(k => k.id === id).short, ok: e.filter(hasItem).length, n: e.length }; });
+      const todo = ks.filter(k => k.ok < k.n).sort((a, b) => b.ok / b.n - a.ok / a.n)[0];
+      return { t: 'Kits de casa e mochila', done: !todo, sub: todo ? `${todo.name}: ${todo.ok} de ${todo.n} essenciais` : 'Essenciais prontos', ...(todo ? { act: 'kitTab', v: todo.id } : { href: '#/kit' }) };
+    })(),
     { t: 'Telemóvel preparado', done: !!S.settings.phoneReady, sub: 'Alertas de emergência e ficha médica', href: '#/agir/telemovel' },
     { t: 'Mapa sem internet', done: !!S.settings.mapSaved, sub: S.settings.mapSaved ? 'Guardado' : 'Guardar a zona de casa e do ponto', href: '#/mapa' },
     { t: 'Simulacro com a família', done: !!drillOk, sub: drillOk ? 'Feito em ' + new Date(S.settings.lastDrill).toLocaleDateString('pt-PT') : 'Ir juntos ao ponto de encontro', href: '#/agir/simulacro' },
@@ -879,10 +883,10 @@ function viewPrepare() {
   <section class="card">
     <h3>O seu plano · ${done} de ${steps.length}</h3>
     <span class="bar big"><i style="width:${Math.round((done / steps.length) * 100)}%"></i></span>
-    ${next ? `<a class="door next-step" ${link(next)}>${icon('arrow')}<span class="door-t"><strong>${esc(next.t)}</strong><small>Próximo passo · ${esc(next.sub)}</small></span><span class="chev" aria-hidden="true">›</span></a>` : '<p class="note">Plano completo. Reveja-o de 6 em 6 meses.</p>'}
-    <ol class="steps">${steps.map(x => `<li class="step ${x.done ? 'done' : ''}">
-      <a class="step-main" ${link(x)}>${icon(x.done ? 'checkCircle' : 'circle')}
-        <span class="now-t"><strong>${esc(x.t)}</strong><small>${esc(x.sub)}</small></span><span class="chev" aria-hidden="true">›</span></a></li>`).join('')}</ol>
+    ${next ? '' : '<p class="note">Plano completo. Reveja-o de 6 em 6 meses.</p>'}
+    <ol class="steps">${steps.map(x => `<li class="step ${x.done ? 'done' : ''} ${x === next ? 'is-next' : ''}">
+      <a class="step-main" ${link(x)}>${icon(x.done ? 'checkCircle' : x === next ? 'arrow' : 'circle')}
+        <span class="now-t"><strong>${esc(x.t)}${x === next ? ' <span class="badge next-tag">Agora</span>' : ''}</strong><small>${esc(x.sub)}</small></span><span class="chev" aria-hidden="true">›</span></a></li>`).join('')}</ol>
   </section>
   ${st.exp.length ? `<section class="card">
     <h3>A expirar</h3>
@@ -1040,33 +1044,28 @@ function viewGroups() {
   </section>`}
   ${S.groups.length ? S.groups.map(g => `
     <section class="card">
-      <div class="group-head"><h2>${esc(g.name)}</h2>${isShared(g) ? syncBadge(g) : ''}</div>
-      ${isShared(g) ? `<div class="grid-buttons g3">
-        <a class="btn" href="#/chat/${g.id}">${icon('chat')} Chat${countBadge(unread(g.id), 'mensagens por ler')}</a>
-        <button class="btn" data-act="shareGroup" data-id="${g.id}">${icon('share')} Convidar</button>
-        <button class="btn" data-act="editGroup" data-id="${g.id}">${icon('settings')} Editar</button>
-      </div>` : `<div class="grid-buttons">
-        <button class="btn primary" data-act="shareGroup" data-id="${g.id}">${icon('share')} Partilhar com a família</button>
-        <button class="btn" data-act="editGroup" data-id="${g.id}">${icon('settings')} Editar</button>
-      </div>`}
+      <div class="group-head"><h2>${esc(g.name)}</h2>${isShared(g) ? syncBadge(g) : ''}<span class="spacer"></span><button class="linkbtn" data-act="editGroup" data-id="${g.id}">Editar</button></div>
+      <div class="btn-row">${isShared(g)
+        ? `<a class="btn sm" href="#/chat/${g.id}">${icon('chat')} Chat${countBadge(unread(g.id), 'mensagens por ler')}</a><button class="btn sm" data-act="shareGroup" data-id="${g.id}">${icon('share')} Convidar</button>`
+        : `<button class="btn sm primary" data-act="shareGroup" data-id="${g.id}">${icon('share')} Partilhar com a família</button>`}</div>
       <h4 class="sub-h">${icon('pin')} Pontos de encontro</h4>
       <div class="meet">${icon('pin')}<div class="meet-body">
         <div class="meet-head"><span class="muted small">Ponto de encontro principal</span>
           <button class="linkbtn small" data-act="editMeetMain" data-id="${g.id}">${g.meetingPoint || hasCoords(g) ? 'Editar' : 'Definir'}</button></div>
         ${g.meetingPoint || hasCoords(g) ? `<strong>${esc(g.meetingPoint || 'sem nome')}</strong>
-        ${hasCoords(g) ? `<div class="mono small muted">${fmtCoords(g)}</div>${navLinks(g, g.meetingPoint)}` : ''}` : '<span class="muted small">Por definir</span>'}</div></div>
+        ${hasCoords(g) ? navLinks(g, g.meetingPoint) : ''}` : '<span class="muted small">Por definir</span>'}</div></div>
       ${livePoints(g).map(x => `<div class="meet alt">${icon('pin')}<div class="meet-body">
         <div class="meet-head"><span class="muted small">${esc(MEET_KINDS[x.kind])}</span>
           <button class="linkbtn small" data-act="editMeet" data-id="${g.id}" data-pid="${x.id}">Editar</button></div>
         <strong>${esc(x.name)}</strong>${x.notes ? `<div class="muted small">${esc(x.notes)}</div>` : ''}
-        ${hasCoords(x) ? `<div class="mono small muted">${fmtCoords(x)}</div>${navLinks(x, x.name)}` : ''}</div></div>`).join('')}
+        ${hasCoords(x) ? navLinks(x, x.name) : ''}</div></div>`).join('')}
       <button class="btn ghost" data-act="addMeet" data-id="${g.id}">${icon('pin')} + Ponto alternativo</button>
       ${g.notes ? `<p class="muted">${esc(g.notes)}</p>` : ''}
       <h4 class="sub-h">${icon('users')} Pessoas${liveMembers(g).length ? ' · ' + liveMembers(g).length : ''}</h4>
       ${liveMembers(g).length ? '' : '<p class="muted small">Ainda sem pessoas.</p>'}
       <ul class="list">${liveMembers(g).map(m => `
         <li class="row"><div class="row-main" data-act="editMember" data-id="${g.id}" data-mid="${m.id}">
-          <div class="row-title">${esc(m.name)}${m.pk && m.pk === myPub() ? ' <span class="badge good">eu</span>' : ''}${m.role ? ` <span class="badge">${esc(m.role)}</span>` : ''}</div>
+          <div class="row-title">${esc(m.name)}${m.pk && m.pk === myPub() ? ' <span class="role">· eu</span>' : ''}${m.role ? ` <span class="role">· ${esc(m.role)}</span>` : ''}</div>
           ${m.needs ? `<div class="row-sub">Necessidades: ${esc(m.needs)}</div>` : ''}
         </div>${m.phone ? `<a class="btn" href="${telHref(m.phone)}" aria-label="Ligar a ${esc(m.name)}">${icon('phone')}</a>` : ''}</li>`).join('')}</ul>
       <button class="btn ghost" data-act="addMember" data-id="${g.id}">+ Pessoa</button>
@@ -1075,7 +1074,7 @@ function viewGroups() {
         const rd = daysLeft(a.rabies);
         const rab = a.rabies ? `<span class="badge ${rd < 0 ? 'bad' : rd <= 30 ? 'warn' : 'good'}">antirrábica ${rd < 0 ? 'expirada' : 'até ' + fmtDate(a.rabies)}</span>` : '';
         return `<li class="row"><div class="row-main" data-act="editPet" data-id="${g.id}" data-pid="${a.id}">
-          <div class="row-title">${esc(a.name)} <span class="badge">${esc([a.species, a.breed].filter(Boolean).join(' · ') || 'animal')}</span></div>
+          <div class="row-title">${esc(a.name)} <span class="role">· ${esc([a.species, a.breed].filter(Boolean).join(' · ') || 'animal')}</span></div>
           <div class="row-sub">${a.chip ? `Chip <span class="mono">${esc(a.chip)}</span>` : 'Sem chip registado'}${a.registry ? ' · ' + esc(a.registry) : ''} ${rab}</div>
           ${a.needs ? `<div class="row-sub">Cuidados: ${esc(a.needs)}</div>` : ''}
         </div>${a.vetPhone ? `<a class="btn" href="${telHref(a.vetPhone)}" aria-label="Ligar ao veterinário de ${esc(a.name)}">${icon('phone')}</a>` : ''}</li>`;
@@ -1886,6 +1885,7 @@ function pageHead(r, title) {
     const d = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
     return `<header class="page-head"><span class="eyebrow">${esc(d)}</span><h1>O que precisa agora?</h1></header>`;
   }
+  if (r === 'emergencia') return '<h1 class="sr-only">Modo emergência</h1>';
   const desc = ROUTES[r][4];
   const back = { plano: ['#/preparar', 'Preparar'], cartao: ['#/preparar', 'Preparar'], definicoes: ['#/mais', 'Menu'], sobre: ['#/mais', 'Menu'], chat: ['#/grupos', 'Família'], contactos: ['#/mais', 'Menu'], guia: ['#/mais', 'Menu'] }[r];
   return `<header class="page-head">${back ? `<a class="back" href="${back[0]}">‹ ${back[1]}</a>` : ''}<h1>${esc(title)}</h1>${desc ? `<p>${esc(desc)}</p>` : ''}</header>`;
@@ -2064,9 +2064,9 @@ function viewEmergency() {
   const sug = suggestedGuides();
   const tiles = [...sug.map(x => GUIDES.find(g => g.id === x.id)), ...GUIDES.filter(g => !g.prep && !sug.some(x => x.id === g.id))];
   // O ponto oficial só aparece se for outro sítio (não o mesmo que a família já escolheu).
-  const nearOk = near && near.d <= 25 && !meet.some(g => hasCoords(g) && distanceKm(g, near.p) < 0.3);
+  const nearOk = near && near.d <= 25 && !meet.some(g => (hasCoords(g) && distanceKm(g, near.p) < 0.3) || norm(g.meetingPoint || '').includes(norm(near.p.n)));
   return `
-  <p class="crisis-exit top"><a href="#/painel">‹ Sair do modo emergência</a></p>
+  <p class="crisis-exit corner"><a href="#/painel">Sair ✕</a></p>
   <a class="btn call big" href="tel:112">${icon('phone')} Ligar 112</a>
   <section class="card">
     <h3>Avisar a família</h3>

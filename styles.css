@@ -502,7 +502,7 @@ details.fold > summary { font-size: var(--fs-section); font-weight: 700; }
 /* Emergência: sem barra de navegação, saída sempre à vista */
 html.crisis nav { display: none; }
 html.crisis body { padding-bottom: env(safe-area-inset-bottom); }
-.crisis-exit.top { text-align: left; margin: 0; }
+.crisis-exit.corner { text-align: left; margin: 0; }
 .tile.suggested { border: 2px solid var(--accent); background: var(--accent-soft); }
 .tile.suggested small { color: var(--text); font-weight: 600; }
 .btn.wide { width: 100%; min-height: 56px; font-size: 1.05rem; }
@@ -615,3 +615,21 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .step-text { font-weight: 600; letter-spacing: -0.015em; }
 .mission h2 { font-weight: 800; letter-spacing: -0.03em; }
 @media (max-width: 480px) { .page-head h1 { font-size: 1.75rem; } }
+
+/* ===== Crítica: emergência, repetições, Família, acessibilidade ===== */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.crisis-exit.corner { text-align: right; margin: -8px 0 -4px; }
+.crisis-exit.corner a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; color: var(--muted); text-decoration: none; font-weight: 600; }
+/* Preparar: o próximo passo destaca-se dentro da lista (sem repetir) */
+.step.is-next .step-main { background: var(--accent-soft); margin: 0 -12px; padding: 14px 12px; border-radius: var(--radius); }
+.step.is-next .step-main > .ic { color: var(--accent); }
+.step.is-next + .step { border-top-color: transparent; }
+.badge.next-tag { background: var(--accent); color: var(--accent-ink); margin-left: 6px; }
+/* Família: ações numa linha; papéis em texto cinzento */
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 6px; }
+.role { color: var(--muted); font-weight: 400; }
+.menu-list button { background: none; border: 0; border-top: 1px solid var(--line); text-align: left; font: inherit; color: var(--accent); padding: 12px 14px; cursor: pointer; }
+/* Acessibilidade: ligações "Editar" com 44 px de área; subtítulos maiores */
+.meet-head .linkbtn, .group-head .linkbtn, .toolbar .linkbtn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
+.row-sub, .now-row small, .step small { font-size: .9rem; }
+.row-hint { font-size: .88rem; }
