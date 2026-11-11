@@ -66,6 +66,33 @@ export const EXTRA_KIT = [
   ['animais', 'abrigo', 'Manta ou brinquedo conhecido', 1, 'un', false, false, false],
 ].map(([kit, cat, name, qty, unit, perPerson, expires, ess]) => ({ kit, cat, name, qty, unit, perPerson, expires, ess }));
 
+// Nomes curtos para a lista (o detalhe aparece por baixo). Aplica-se também a quem já tinha os nomes longos.
+export const KIT_RENAME = {
+  'Água potável (2 L/pessoa/dia, 3 dias)': ['Água potável', '2 L por pessoa por dia, para 3 dias'],
+  'Comida não perecível (enlatados, barras, frutos secos)': ['Comida não perecível', 'Enlatados, barras, frutos secos'],
+  'Comida para bebé / animais (se aplicável)': ['Comida para bebé', 'Se houver um bebé em casa'],
+  'Medicação habitual (7 dias) + cópia das receitas': ['Medicação habitual', '7 dias e cópia das receitas'],
+  'Produtos de higiene, papel higiénico, sacos do lixo': ['Higiene', 'Papel higiénico, sabão, sacos do lixo'],
+  'Óculos / lentes suplentes': ['Óculos ou lentes suplentes', ''],
+  'Lanterna (de preferência frontal)': ['Lanterna', 'De preferência frontal'],
+  'Powerbank carregado + cabos': ['Powerbank', 'Carregado, com os cabos'],
+  'Fósforos / isqueiro e velas': ['Fósforos ou isqueiro', 'E velas'],
+  'Cópias de documentos (CC, seguros, escrituras) em saco estanque': ['Cópias de documentos', 'Cartão de cidadão, seguros, escrituras, num saco estanque'],
+  'Dinheiro em numerário (notas pequenas)': ['Dinheiro em numerário', 'Notas pequenas e moedas'],
+  'Chaves suplentes (casa, carro)': ['Chaves suplentes', 'Casa e carro'],
+  'Mapa da zona com pontos de encontro': ['Mapa da zona', 'Com os pontos de encontro marcados'],
+  'Roupa quente e impermeável, calçado resistente': ['Roupa quente e impermeável', 'E calçado resistente'],
+  'Barras energéticas e comida pronta a comer': ['Barras energéticas', 'E comida pronta a comer'],
+  'Medicação habitual (3 dias) e cópia das receitas': ['Medicação habitual', '3 dias e cópia das receitas'],
+  'Kit de higiene (escova, pasta, sabonete, pensos)': ['Kit de higiene', 'Escova, pasta, sabonete, pensos'],
+  'Muda de roupa, meias e roupa interior': ['Muda de roupa', 'Meias e roupa interior'],
+  'Corda fina (10 m) e fita adesiva': ['Corda fina e fita adesiva', '10 m de corda'],
+  'Cartão da família e contactos em papel': ['Cartão da família', 'E contactos em papel'],
+  'Carregador de isqueiro para telemóvel': ['Carregador de isqueiro', 'Para o telemóvel'],
+  'Cópia do boletim de vacinas e do registo': ['Boletim de vacinas', 'Cópia, com o registo'],
+  'Água para o animal e taça dobrável': ['Água para o animal', 'E uma taça dobrável'],
+};
+
 // "Como escolher": conselhos curtos por artigo (o nome começa por…). Sem marcas nem lojas.
 export const TIPS = [
   ['Água', 'Garrafas fechadas de fábrica. Conte 2 litros por pessoa e por dia (mais com calor) e troque-as antes da validade.'],

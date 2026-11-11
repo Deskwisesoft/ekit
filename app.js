@@ -1,7 +1,7 @@
 import {
   CATEGORIES, DEFAULT_KIT, EMERGENCY_NUMBERS, DEFAULT_LISTS, GUIDES,
   IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL, DISTRICT_CAPITALS, OVERPASS_URLS, SEISMIC_URL,
-  RADIO_A1, RADIO_SOURCE, FIRE_RISK_URL, FIRE_LEVELS, ALERT_GUIDES, ESSENTIALS, KITS, EXTRA_KIT, TIPS,
+  RADIO_A1, RADIO_SOURCE, FIRE_RISK_URL, FIRE_LEVELS, ALERT_GUIDES, ESSENTIALS, KITS, EXTRA_KIT, TIPS, KIT_RENAME,
 } from './data.js';
 import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS, publishInvite, fetchInvite, newInviteCode, normalizeCode } from './chat.js';
 const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
@@ -10,11 +10,13 @@ const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
 const KEY = 'ekit:v1';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 
+// Nome curto + detalhe (para listas mais fáceis de ler).
+const shortItem = i => { const r = KIT_RENAME[i.name]; return r ? { ...i, name: r[0], hint: i.hint || r[1] } : i; };
 function seed() {
   return {
     version: 1,
     settings: { household: 2, district: 'LSB', notifyDays: 30, lastNotified: '' },
-    kit: [...DEFAULT_KIT.map(i => ({ ...i, kit: 'casa' })), ...EXTRA_KIT].map(i => ({ id: uid(), ess: false, ...i, have: 0, expiry: '', location: '', notes: '' })),
+    kit: [...DEFAULT_KIT.map(i => ({ ...i, kit: 'casa' })), ...EXTRA_KIT].map(i => shortItem({ id: uid(), ess: false, hint: '', ...i, have: 0, expiry: '', location: '', notes: '' })),
     contacts: [],
     groups: [],
     lists: DEFAULT_LISTS.map(l => ({ id: uid(), name: l.name, items: l.items.map(text => ({ id: uid(), text, done: false })) })),
@@ -126,11 +128,11 @@ function cleanState(s) {
     radio: str(st.radio, 60), lastBackup: num(st.lastBackup), mapSaved: num(st.mapSaved), mapSavedN: num(st.mapSavedN),
     lastDrill: num(st.lastDrill), drillSnooze: num(st.drillSnooze), phoneReady: !!st.phoneReady,
   };
-  out.kit = Array.isArray(s.kit) ? s.kit.map(i => ({
+  out.kit = Array.isArray(s.kit) ? s.kit.map(shortItem).map(i => ({
     id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
     unit: str(i?.unit, 20), perPerson: !!i?.perPerson, expires: !!i?.expires, have: Math.max(0, num(i?.have)), expiry: isoDate(i?.expiry),
     location: str(i?.location, 200), notes: str(i?.notes, 1000),
-    kit: KITS.some(k => k.id === i?.kit) ? i.kit : 'casa', ess: !!i?.ess,
+    kit: KITS.some(k => k.id === i?.kit) ? i.kit : 'casa', ess: !!i?.ess, hint: str(i?.hint, 200),
   })) : base.kit;
   // Os kits novos (mochila, carro, animais) chegam uma vez a quem já usava a app.
   if (num(s.kitsV, 1) < 2) for (const it of base.kit) if (it.kit !== 'casa' && !out.kit.some(x => x.kit === it.kit && x.name === it.name)) out.kit.push(it);
@@ -946,6 +948,7 @@ function kitRow(i) {
     <div class="row-main" data-act="editItem" data-id="${i.id}">
       <div class="row-title">${esc(i.name)}</div>
       <div class="row-sub">${sub}${e ? ` <span class="badge ${e.cls}">${esc(e.label)}</span>` : ''}</div>
+      ${i.hint ? `<div class="row-hint">${esc(i.hint)}</div>` : ''}
     </div>
     <button class="have-btn ${ok ? 'on' : ''}" data-act="fill" data-id="${i.id}" aria-pressed="${ok}" aria-label="${ok ? 'Já tenho' : 'Marcar que tenho'}: ${esc(i.name)}">${ok ? '✓ Tenho' : 'Tenho'}</button>
   </li>`;
@@ -958,6 +961,7 @@ function itemForm(item) {
     fields: [
       ...(tip ? [{ type: 'info', html: `<span class="tip"><strong>Como escolher:</strong> ${esc(tip)}</span>` }] : []),
       { k: 'name', label: 'Nome', required: true },
+      { k: 'hint', more: 'Mais detalhes', label: 'Detalhe (aparece por baixo do nome)' },
       { k: 'have', label: 'Quantidade que tenho', type: 'number' },
       { k: 'expiry', label: 'Data de validade', type: 'date' },
       { k: 'kit', more: 'Mais detalhes', label: 'Em que kit', type: 'select', options: KITS.map(k => [k.id, k.name]) },
@@ -2114,6 +2118,13 @@ function viewPlan() {
   const g = S.groups[0];
   if (!g) return `<section class="card"><h3>Comece pela sua família</h3><p class="muted">O plano fica guardado com a família.</p><button class="btn primary" data-act="wizard" data-v="1">Começar</button></section>`;
   const done = PLAN_FIELDS.filter(([k]) => g[k]).length;
+  if (!done) return `
+  <section class="card empty-state">
+    ${icon('users')}
+    <h3>Ainda não combinaram nada</h3>
+    <p class="muted">Sentem-se 10 minutos e respondam a ${PLAN_FIELDS.length} perguntas simples: quem vai buscar as crianças, onde está a mochila, a quem ligar.</p>
+    <button class="btn primary wide" data-act="editPlan" data-id="${g.id}">Combinar o plano</button>
+  </section>`;
   return `
   <section class="card">
     <h3>O que combinámos · ${done} de ${PLAN_FIELDS.length}</h3>
@@ -2259,7 +2270,12 @@ const actions = {
   editItem: d => itemForm(findKit(d.id)),
   inc: d => { findKit(d.id).have++; },
   dec: d => { const i = findKit(d.id); i.have = Math.max(0, i.have - 1); },
-  fill: d => { const i = findKit(d.id); i.have = hasItem(i) ? 0 : Math.max(need(i), 1); },
+  fill: d => {
+    const i = findKit(d.id), was = hasItem(i);
+    i.have = was ? 0 : Math.max(need(i), 1);
+    const ess = kitOf(i.kit || 'casa').filter(isEssential);
+    if (!was && isEssential(i) && ess.every(hasItem)) toast(`${KITS.find(k => k.id === (i.kit || 'casa')).name}: essenciais prontos.`);
+  },
   addContact: () => contactForm(),
   editContact: d => contactForm(S.contacts.find(c => c.id === d.id)),
   addGroup: () => groupForm(),
