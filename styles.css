@@ -1,11 +1,8 @@
 /* eKit — sistema visual sóbrio e institucional (sem imitar entidades oficiais). */
+/* Uma só família de letra (Inter, licença OFL), incluída na app para funcionar sem internet. */
 @font-face {
-  font-family: "Source Sans 3"; font-style: normal; font-weight: 200 900; font-display: swap;
-  src: url("vendor/fonts/source-sans-3-latin-wght-normal.woff2") format("woff2-variations");
-}
-@font-face {
-  font-family: "Source Serif 4"; font-style: normal; font-weight: 200 900; font-display: swap;
-  src: url("vendor/fonts/source-serif-4-latin-wght-normal.woff2") format("woff2-variations");
+  font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url("vendor/fonts/inter-latin-wght-normal.woff2") format("woff2-variations"), url("vendor/fonts/inter-latin-wght-normal.woff2") format("woff2");
 }
 
 :root {
@@ -18,8 +15,8 @@
   --bad: #b42318; --bad-bg: #fde8e6; --chip: #eef1f4;
   --radius: 10px; --radius-card: 12px; --shadow: none;
   --fs-title: 2rem; --fs-section: 1.2rem; --fs-label: .78rem;
-  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
-  --sans: "Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: var(--sans); /* sem serifa: o destaque vem do peso e do tamanho */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -600,3 +597,21 @@ h2, h3, details.fold > summary, .group-head h2 { font-family: var(--sans); lette
 .empty-state > .ic { width: 40px; height: 40px; color: var(--accent); margin: 0 auto 8px; display: block; }
 .empty-state h3 { font-size: 1.25rem; }
 .empty-state p { max-width: 42ch; margin: 6px auto 16px; }
+
+/* ===== Tipografia limpa e moderna (Inter) =====
+   Hierarquia só por tamanho e peso: título 800 · secção 700 · texto 400 · etiquetas 600 em maiúsculas. */
+body { font-size: 16px; line-height: 1.55; font-feature-settings: "cv11", "ss03"; }
+h1, h2, h3 { letter-spacing: -0.02em; }
+.page-head h1 { font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+.page-head p { font-size: 1rem; }
+.door-t strong { font-weight: 750; letter-spacing: -0.02em; font-size: 1.22rem; }
+.card > h3:first-child, details.fold > summary, .group-head h2 { font-weight: 700; letter-spacing: -0.015em; font-size: 1.06rem; }
+.eyebrow, .label, .sub-h { font-weight: 600; letter-spacing: .08em; font-size: .72rem; }
+.row-title, .now-row strong { font-weight: 600; }
+.brand-name { font-weight: 800; letter-spacing: -0.03em; }
+.tagline { font-weight: 700; letter-spacing: -0.01em; }
+.btn, .have-btn, .switch, .seg button { font-weight: 600; letter-spacing: -0.005em; }
+.ring span, .count, .dot-count, .step-num, .mono { font-variant-numeric: tabular-nums; }
+.step-text { font-weight: 600; letter-spacing: -0.015em; }
+.mission h2 { font-weight: 800; letter-spacing: -0.03em; }
+@media (max-width: 480px) { .page-head h1 { font-size: 1.75rem; } }
