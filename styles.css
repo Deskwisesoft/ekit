@@ -633,3 +633,34 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .meet-head .linkbtn, .group-head .linkbtn, .toolbar .linkbtn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
 .row-sub, .now-row small, .step small { font-size: .9rem; }
 .row-hint { font-size: .88rem; }
+
+/* Estado da família */
+.fam-status { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fam-status li { display: grid; grid-template-columns: 12px auto 1fr; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius); background: var(--chip); }
+.fam-status li span:last-child { color: var(--muted); font-size: .9rem; text-align: right; }
+.fam-status .st-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--strong-line); }
+.fam-status li.ok .st-dot { background: var(--good); }
+.fam-status li.help { background: var(--bad-bg); color: var(--bad); }
+.fam-status li.help .st-dot { background: var(--bad); }
+.fam-status li.help span:last-child { color: var(--bad); font-weight: 700; }
+/* Mapa: saúde */
+.dot.hosp { background: #dc2626; } .dot.pharm { background: #16a34a; }
+/* Kits: 5 separadores */
+.kit-tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.kit-tabs button strong { font-size: .9rem; }
+/* O que fazer: separadores */
+.seg.wide { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+.seg.wide button { min-height: 46px; font-size: 1rem; }
+.guide .btn { margin-top: 12px; }
+.set-label { margin-top: 16px; }
+.about-foot { line-height: 1.7; }
+/* Texto maior */
+html.big-text body { font-size: 18.5px; }
+html.big-text .row-sub, html.big-text .now-row small, html.big-text .step small, html.big-text .small { font-size: .95rem; }
+html.big-text .btn, html.big-text .have-btn { min-height: 50px; }
+/* Alto contraste */
+html.hc { --muted: #2b3540; --line: #8a96a3; --strong-line: #1f2a36; --chip: #e3e8ee; }
+html.hc a { text-decoration: underline; }
+html.hc .btn, html.hc .card, html.hc .tile, html.hc .have-btn { border-width: 2px; border-color: var(--strong-line); }
+@media (prefers-color-scheme: dark) { html.hc { --muted: #dbe2ea; --line: #7b8a9a; --strong-line: #c7d2de; --chip: #26313d; } }
+html.hc.crisis { --muted: #e6ecf2; --line: #8a99aa; }

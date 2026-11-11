@@ -16,6 +16,7 @@ export const KITS = [
   { id: 'mochila', name: 'Mochila de evacuação', short: 'Mochila', desc: 'Pronta junto à porta, para sair de casa em poucos minutos.' },
   { id: 'carro', name: 'Carro', short: 'Carro', desc: 'Para ficar retido na estrada ou ter de sair de carro.' },
   { id: 'animais', name: 'Animais', short: 'Animais', desc: 'Para levar consigo os animais da família.' },
+  { id: 'diario', name: 'Mochila do dia a dia', short: 'Dia a dia', desc: 'Uma por pessoa, para a escola ou o trabalho.' },
 ];
 // Artigos dos outros kits: [kit, categoria, nome, quantidade, unidade, por pessoa, tem validade, essencial]
 export const EXTRA_KIT = [
@@ -64,6 +65,15 @@ export const EXTRA_KIT = [
   ['animais', 'saude', 'Medicação do animal', 1, 'conj.', false, true, false],
   ['animais', 'saude', 'Sacos higiénicos ou areia', 1, 'conj.', false, false, false],
   ['animais', 'abrigo', 'Manta ou brinquedo conhecido', 1, 'un', false, false, false],
+  ['diario', 'agua', 'Garrafa de água pequena', 0.5, 'L', true, true, true],
+  ['diario', 'agua', 'Barra energética', 2, 'un', true, true, true],
+  ['diario', 'saude', 'Medicação para 1 dia', 1, 'conj.', true, true, true],
+  ['diario', 'saude', 'Máscara FFP2', 1, 'un', true, true, false],
+  ['diario', 'energia', 'Powerbank pequeno e cabo', 1, 'un', true, false, true],
+  ['diario', 'energia', 'Lanterna pequena', 1, 'un', true, false, false],
+  ['diario', 'energia', 'Apito', 1, 'un', true, false, false],
+  ['diario', 'docs', 'Cartão da família', 1, 'un', true, false, true],
+  ['diario', 'docs', 'Algum dinheiro', 1, 'conj.', true, false, false],
 ].map(([kit, cat, name, qty, unit, perPerson, expires, ess]) => ({ kit, cat, name, qty, unit, perPerson, expires, ess }));
 
 // Nomes curtos para a lista (o detalhe aparece por baixo). Aplica-se também a quem já tinha os nomes longos.
@@ -279,6 +289,17 @@ export const GUIDES = [
     'Informe o seu grupo do local para onde vai.',
   ] },
 ];
+
+// Depois da emergência: voltar a casa e à rotina em segurança.
+GUIDES.push({ id: 'depois', icon: '✅', title: 'Depois da emergência', steps: [
+  'Confirme que todos estão bem e carregue em "Estou bem" para avisar a família.',
+  'Se cheirar a gás, não acenda luzes nem interruptores: saia e ligue 112.',
+  'Não entre em edifícios com fissuras ou danos até serem avaliados.',
+  'Verifique a eletricidade e a água antes de voltar a ligá-las.',
+  'Fotografe os danos para o seguro antes de arrumar.',
+  'Beba só água engarrafada até confirmarem que a da torneira é segura.',
+  'Reponha o que usou do kit.',
+] });
 
 // Simulacro: um ensaio do plano com a família (de 6 em 6 meses).
 GUIDES.push({ id: 'simulacro', prep: true, icon: '🚶', title: 'Simulacro com a família', steps: [
