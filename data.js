@@ -10,6 +10,89 @@ export const CATEGORIES = [
   { id: 'outros', name: 'Outros', icon: '📦' },
 ];
 
+// Kits por situação (inspirado nas recomendações da ANEPC e da UE).
+export const KITS = [
+  { id: 'casa', name: 'Casa (72 horas)', short: 'Casa', desc: 'Para ficar em casa 3 dias sem luz, água ou lojas.' },
+  { id: 'mochila', name: 'Mochila de evacuação', short: 'Mochila', desc: 'Pronta junto à porta, para sair de casa em poucos minutos.' },
+  { id: 'carro', name: 'Carro', short: 'Carro', desc: 'Para ficar retido na estrada ou ter de sair de carro.' },
+  { id: 'animais', name: 'Animais', short: 'Animais', desc: 'Para levar consigo os animais da família.' },
+];
+// Artigos dos outros kits: [kit, categoria, nome, quantidade, unidade, por pessoa, tem validade, essencial]
+export const EXTRA_KIT = [
+  ['mochila', 'agua', 'Água em garrafas pequenas', 2, 'L', true, true, true],
+  ['mochila', 'agua', 'Barras energéticas e comida pronta a comer', 3, 'un', true, true, true],
+  ['mochila', 'agua', 'Pastilhas ou filtro para purificar água', 1, 'conj.', false, true, false],
+  ['mochila', 'saude', 'Kit de primeiros socorros compacto', 1, 'un', false, true, true],
+  ['mochila', 'saude', 'Medicação habitual (3 dias) e cópia das receitas', 1, 'conj.', true, true, true],
+  ['mochila', 'saude', 'Máscaras FFP2', 2, 'un', true, true, false],
+  ['mochila', 'saude', 'Kit de higiene (escova, pasta, sabonete, pensos)', 1, 'conj.', true, false, false],
+  ['mochila', 'saude', 'Gel desinfetante e toalhitas', 1, 'conj.', false, true, false],
+  ['mochila', 'energia', 'Lanterna frontal e pilhas', 1, 'conj.', true, false, true],
+  ['mochila', 'energia', 'Rádio pequeno a pilhas ou a manivela', 1, 'un', false, false, true],
+  ['mochila', 'energia', 'Powerbank carregado e cabos', 1, 'un', false, false, true],
+  ['mochila', 'energia', 'Apito', 1, 'un', true, false, true],
+  ['mochila', 'energia', 'Isqueiro ou fósforos à prova de água', 1, 'un', false, false, false],
+  ['mochila', 'docs', 'Cópias de documentos em saco estanque', 1, 'conj.', false, false, true],
+  ['mochila', 'docs', 'Dinheiro em notas pequenas e moedas', 1, 'conj.', false, false, true],
+  ['mochila', 'docs', 'Cartão da família e contactos em papel', 1, 'un', false, false, true],
+  ['mochila', 'docs', 'Mapa em papel da zona', 1, 'un', false, false, false],
+  ['mochila', 'docs', 'Caneta e bloco', 1, 'conj.', false, false, false],
+  ['mochila', 'abrigo', 'Manta térmica', 1, 'un', true, false, true],
+  ['mochila', 'abrigo', 'Impermeável ou poncho', 1, 'un', true, false, false],
+  ['mochila', 'abrigo', 'Muda de roupa, meias e roupa interior', 1, 'conj.', true, false, false],
+  ['mochila', 'abrigo', 'Canivete multiusos', 1, 'un', false, false, false],
+  ['mochila', 'abrigo', 'Corda fina (10 m) e fita adesiva', 1, 'conj.', false, false, false],
+  ['mochila', 'abrigo', 'Sacos do lixo resistentes', 3, 'un', false, false, false],
+  ['mochila', 'abrigo', 'Luvas de trabalho', 1, 'par', false, false, false],
+  ['carro', 'agua', 'Água (garrafas)', 2, 'L', false, true, true],
+  ['carro', 'agua', 'Barras energéticas', 4, 'un', false, true, true],
+  ['carro', 'saude', 'Kit de primeiros socorros', 1, 'un', false, true, true],
+  ['carro', 'energia', 'Lanterna e pilhas', 1, 'conj.', false, false, true],
+  ['carro', 'energia', 'Carregador de isqueiro para telemóvel', 1, 'un', false, false, true],
+  ['carro', 'abrigo', 'Colete refletor e triângulo', 1, 'conj.', false, false, true],
+  ['carro', 'abrigo', 'Manta térmica ou cobertor', 2, 'un', false, false, true],
+  ['carro', 'abrigo', 'Roupa quente e impermeável', 1, 'conj.', false, false, false],
+  ['carro', 'abrigo', 'Cabos de arranque da bateria', 1, 'un', false, false, false],
+  ['carro', 'abrigo', 'Pá pequena dobrável', 1, 'un', false, false, false],
+  ['carro', 'docs', 'Mapa em papel', 1, 'un', false, false, false],
+  ['carro', 'outros', 'Depósito sempre acima de metade', 1, 'hábito', false, false, true],
+  ['animais', 'agua', 'Comida do animal para 3 dias', 3, 'dias', false, true, true],
+  ['animais', 'agua', 'Água para o animal e taça dobrável', 1, 'conj.', false, false, true],
+  ['animais', 'abrigo', 'Trela, coleira e transportadora', 1, 'conj.', false, false, true],
+  ['animais', 'docs', 'Cópia do boletim de vacinas e do registo', 1, 'un', false, false, true],
+  ['animais', 'docs', 'Fotografia recente do animal', 1, 'un', false, false, true],
+  ['animais', 'saude', 'Medicação do animal', 1, 'conj.', false, true, false],
+  ['animais', 'saude', 'Sacos higiénicos ou areia', 1, 'conj.', false, false, false],
+  ['animais', 'abrigo', 'Manta ou brinquedo conhecido', 1, 'un', false, false, false],
+].map(([kit, cat, name, qty, unit, perPerson, expires, ess]) => ({ kit, cat, name, qty, unit, perPerson, expires, ess }));
+
+// "Como escolher": conselhos curtos por artigo (o nome começa por…). Sem marcas nem lojas.
+export const TIPS = [
+  ['Água', 'Garrafas fechadas de fábrica. Conte 2 litros por pessoa e por dia (mais com calor) e troque-as antes da validade.'],
+  ['Comida não perecível', 'O que não precisa de frigorífico nem de cozinhar: conservas de abertura fácil, feijão, atum, fruta seca, bolachas. Escolha o que a família já come.'],
+  ['Barras energéticas', 'Leves e prontas a comer. Troque-as antes da validade e coma-as no dia a dia para não as desperdiçar.'],
+  ['Abre-latas', 'Manual e metálico: um abre-latas elétrico não serve sem luz.'],
+  ['Pastilhas ou filtro', 'Pastilhas de purificação ou um filtro portátil, para quando só houver água de origem duvidosa.'],
+  ['Kit de primeiros socorros', 'Pensos, compressas, ligaduras, desinfetante, tesoura, luvas e termómetro. Verifique as validades.'],
+  ['Medicação', 'Alguns dias de cada medicamento e cópia das receitas. Fale com o médico de família para manter esta reserva.'],
+  ['Máscaras', 'FFP2 protegem do fumo fino e de poeiras. Guarde-as na embalagem.'],
+  ['Lanterna', 'Frontal deixa as mãos livres. Prefira LED e pilhas iguais às do rádio (AA).'],
+  ['Pilhas', 'Do mesmo tamanho que a lanterna e o rádio. Guarde-as fora dos aparelhos.'],
+  ['Rádio', 'A pilhas AA ou com manivela/solar, com FM. Num apagão é por aqui que chega a informação oficial.'],
+  ['Powerbank', 'Pelo menos 10 000 mAh, com os cabos certos. Recarregue-o a cada 3 meses.'],
+  ['Apito', 'Ouve-se mais longe do que a voz e cansa menos, se ficar preso.'],
+  ['Cópias de documentos', 'Cartão de cidadão, seguros e receitas, em papel, dentro de um saco estanque (zip).'],
+  ['Dinheiro', 'Notas pequenas e moedas: sem luz, multibancos e cartões podem não funcionar.'],
+  ['Cartão da família', 'Imprima-o em Menu › Cartão da família e guarde uma cópia na mochila.'],
+  ['Manta térmica', 'Leve e pequena; com o lado dourado para fora conserva o calor do corpo.'],
+  ['Colete refletor', 'Obrigatório. Deixe-o ao alcance do condutor, sem ter de sair do lugar.'],
+  ['Carregador de isqueiro', 'Para carregar o telemóvel com o motor ligado.'],
+  ['Depósito', 'Abasteça quando chegar a metade: numa evacuação as bombas podem estar fechadas ou cheias.'],
+  ['Comida do animal', 'A ração habitual, em embalagem fechada. Vá trocando para não passar a validade.'],
+  ['Trela', 'Ponha na transportadora o nome do animal e o seu telefone.'],
+  ['Fotografia recente do animal', 'Ajuda a identificá-lo se se perder. Guarde também uma no telemóvel.'],
+];
+
 // perPerson: a quantidade é multiplicada pelo nº de pessoas do agregado.
 // expires: sugere preencher a data de validade.
 export const DEFAULT_KIT = [
@@ -50,7 +133,7 @@ export const EMERGENCY_NUMBERS = [
 
 export const DEFAULT_LISTS = [
   { name: 'Antes de sair de casa (evacuação)', items: [
-    'Pegar no kit de emergência', 'Desligar gás, água e quadro elétrico', 'Fechar portas e janelas',
+    'Pegar na mochila de evacuação', 'Desligar gás, água e quadro elétrico', 'Fechar portas e janelas',
     'Levar medicação e documentos', 'Avisar o grupo/família do destino', 'Seguir as rotas indicadas pelas autoridades',
   ] },
   { name: 'Revisão semestral do kit', items: [
@@ -108,11 +191,40 @@ export const GUIDES = [
     'Durante a trovoada, fique dentro de casa, longe de janelas, e desligue aparelhos da tomada.',
     'Se a água começar a entrar, desligue a eletricidade se for seguro e suba para um piso superior com o kit.',
   ] },
+  { id: 'incendio_casa', icon: '🔥', title: 'Incêndio em casa ou no prédio', steps: [
+    'Saia logo e avise quem está consigo. Não volte atrás para buscar objetos.',
+    'Se houver fumo, desloque-se rente ao chão e tape o nariz e a boca com um pano.',
+    'Antes de abrir uma porta, toque-lhe com as costas da mão: se estiver quente, não a abra.',
+    'Feche as portas atrás de si para atrasar o fogo. Não use o elevador.',
+    'Se não conseguir sair, feche-se numa divisão com janela, tape as frestas com panos molhados e faça-se ver à janela.',
+    'Já em segurança, ligue 112 e vá para o ponto de encontro.',
+  ] },
+  { id: 'gas', icon: '⚠️', title: 'Cheiro a gás', steps: [
+    'Não acenda luzes nem mexa em interruptores, isqueiros ou fichas.',
+    'Abra portas e janelas para arejar.',
+    'Feche a válvula do gás (no contador ou na garrafa) se for seguro.',
+    'Saia de casa e avise os vizinhos.',
+    'Já lá fora, ligue 112 ou a linha de emergência do seu fornecedor de gás.',
+  ] },
   { id: 'calor', icon: '☀️', title: 'Onda de calor', steps: [
     'Beba água regularmente, mesmo sem sede.',
     'Evite exposição ao sol entre as 11h e as 17h.',
     'Acompanhe idosos, crianças e pessoas com doença crónica.',
     'Mantenha a casa fresca: estores fechados de dia, ventilar à noite.',
+  ] },
+  { id: 'frio', icon: '❄️', title: 'Onda de frio', steps: [
+    'Vista várias camadas de roupa, gorro e luvas, e mantenha os pés secos.',
+    'Aqueça só uma divisão e feche as outras.',
+    'Nunca use fogareiros, braseiras ou geradores dentro de casa: libertam monóxido de carbono.',
+    'Coma refeições quentes e beba líquidos quentes; evite o álcool.',
+    'Acompanhe idosos, crianças e vizinhos que vivem sozinhos.',
+  ] },
+  { id: 'agua', icon: '🚱', title: 'Falta prolongada de água', steps: [
+    'Use primeiro a água guardada no kit para beber e cozinhar.',
+    'Guarde 2 litros por pessoa e por dia só para beber.',
+    'Para a higiene, use gel desinfetante e toalhitas.',
+    'Não beba água de origem desconhecida sem a ferver ou purificar.',
+    'Siga as indicações da Câmara e dos serviços de água sobre os pontos de abastecimento.',
   ] },
   { id: 'abrigo', icon: '🏠', title: 'Confinamento (acidente químico/nuclear)', steps: [
     'Entre no edifício mais próximo e fique lá dentro.',
@@ -151,7 +263,7 @@ GUIDES.push({ id: 'simulacro', prep: true, icon: '🚶', title: 'Simulacro com a
 ] });
 
 // Avisos do IPMA → guia sugerido no modo emergência.
-export const ALERT_GUIDES = { 'Vento': 'vento', 'Agitação Marítima': 'vento', 'Precipitação': 'chuva', 'Trovoada': 'chuva', 'Tempo Quente': 'calor' };
+export const ALERT_GUIDES = { 'Vento': 'vento', 'Agitação Marítima': 'vento', 'Precipitação': 'chuva', 'Trovoada': 'chuva', 'Tempo Quente': 'calor', 'Tempo Frio': 'frio', 'Neve': 'frio' };
 
 // Os 10 essenciais do kit (aparecem primeiro).
 export const ESSENTIALS = ['Água potável', 'Comida não perecível', 'Kit de primeiros socorros', 'Medicação habitual', 'Lanterna',

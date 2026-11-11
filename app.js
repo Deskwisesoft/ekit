@@ -1,7 +1,7 @@
 import {
   CATEGORIES, DEFAULT_KIT, EMERGENCY_NUMBERS, DEFAULT_LISTS, GUIDES,
   IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL, DISTRICT_CAPITALS, OVERPASS_URLS, SEISMIC_URL,
-  RADIO_A1, RADIO_SOURCE, FIRE_RISK_URL, FIRE_LEVELS, ALERT_GUIDES, ESSENTIALS,
+  RADIO_A1, RADIO_SOURCE, FIRE_RISK_URL, FIRE_LEVELS, ALERT_GUIDES, ESSENTIALS, KITS, EXTRA_KIT, TIPS,
 } from './data.js';
 import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS, publishInvite, fetchInvite, newInviteCode, normalizeCode } from './chat.js';
 const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
@@ -14,7 +14,7 @@ function seed() {
   return {
     version: 1,
     settings: { household: 2, district: 'LSB', notifyDays: 30, lastNotified: '' },
-    kit: DEFAULT_KIT.map(i => ({ id: uid(), ...i, have: 0, expiry: '', location: '', notes: '' })),
+    kit: [...DEFAULT_KIT.map(i => ({ ...i, kit: 'casa' })), ...EXTRA_KIT].map(i => ({ id: uid(), ess: false, ...i, have: 0, expiry: '', location: '', notes: '' })),
     contacts: [],
     groups: [],
     lists: DEFAULT_LISTS.map(l => ({ id: uid(), name: l.name, items: l.items.map(text => ({ id: uid(), text, done: false })) })),
@@ -24,7 +24,15 @@ function seed() {
 // ---------- Validação de tudo o que vem de fora (armazenamento, ficheiros, relays, dados abertos) ----------
 // Os dados são normalizados à entrada: textos limitados, números verificados, coordenadas dentro dos limites,
 // só os campos conhecidos. Assim nada vindo de outro membro do grupo ou de um ficheiro chega ao HTML sem controlo.
-const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes'];
+const PLAN_FIELDS = [
+  ['planKids', 'Quem vai buscar as crianças (escola, creche)', 'ex.: a mãe vai à escola; se não conseguir, a avó'],
+  ['planFar', 'Contacto fora da zona (alguém longe a quem todos ligam)', 'ex.: tia Rosa, Coimbra, 912 000 000'],
+  ['planBag', 'Onde está a mochila de evacuação', 'ex.: armário da entrada'],
+  ['planDocs', 'Onde estão os documentos', 'ex.: pasta azul na gaveta da sala'],
+  ['planShut', 'Onde se desligam a água, o gás e a luz', 'ex.: quadro na cozinha, válvula do gás na varanda'],
+  ['planHelp', 'Quem ajuda quem (idosos, crianças, animais)', 'ex.: o Rui leva o cão; a Inês ajuda o avô'],
+];
+const GROUP_FIELDS = ['name', 'meetingPoint', 'lat', 'lng', 'notes', ...PLAN_FIELDS.map(f => f[0])];
 const MEMBER_FIELDS = ['name', 'phone', 'role', 'bitchat', 'needs', 'allergies', 'meds', 'blood', 'consentAt'];
 const HEALTH_FIELDS = ['needs', 'allergies', 'meds', 'blood'];
 // As 4 primeiras ficam na barra (telemóvel e computador); as outras estão no Menu.
@@ -72,6 +80,7 @@ function cleanGroup(g) {
   const o = {
     id: idOf(g?.id), name: str(g?.name, 120) || 'Grupo', meetingPoint: str(g?.meetingPoint, 300),
     lat: coord(g?.lat, 90), lng: coord(g?.lng, 180), notes: str(g?.notes, 2000), meta: {},
+    ...Object.fromEntries(PLAN_FIELDS.map(([k]) => [k, str(g?.[k], 500)])),
     members: arr(g?.members).filter(m => m && typeof m.id === 'string').slice(0, 200).map(cleanMember),
     pets: arr(g?.pets).filter(a => a && typeof a.id === 'string').slice(0, 100).map(cleanPet),
     points: arr(g?.points).filter(a => a && typeof a.id === 'string').slice(0, 20).map(cleanMeet),
@@ -121,7 +130,11 @@ function cleanState(s) {
     id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
     unit: str(i?.unit, 20), perPerson: !!i?.perPerson, expires: !!i?.expires, have: Math.max(0, num(i?.have)), expiry: isoDate(i?.expiry),
     location: str(i?.location, 200), notes: str(i?.notes, 1000),
+    kit: KITS.some(k => k.id === i?.kit) ? i.kit : 'casa', ess: !!i?.ess,
   })) : base.kit;
+  // Os kits novos (mochila, carro, animais) chegam uma vez a quem já usava a app.
+  if (num(s.kitsV, 1) < 2) for (const it of base.kit) if (it.kit !== 'casa' && !out.kit.some(x => x.kit === it.kit && x.name === it.name)) out.kit.push(it);
+  out.kitsV = 2;
   out.contacts = arr(s.contacts).map(c => ({ id: idOf(c?.id), name: str(c?.name, 120), phone: str(c?.phone, 30), relation: str(c?.relation, 120), notes: str(c?.notes, 1000), priority: !!c?.priority }));
   out.lists = Array.isArray(s.lists) ? s.lists.map(l => ({ id: idOf(l?.id), name: str(l?.name, 120), items: arr(l?.items).map(i => ({ id: idOf(i?.id), text: str(i?.text, 300), done: !!i?.done })) })) : base.lists;
   // Listas novas (documentos, vizinhos) chegam uma vez a quem já usava a app.
@@ -715,6 +728,7 @@ const ICONS = {
   paw: '<circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.05Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  snow: '<path d="M12 2v20M4.9 7l14.2 10M19.1 7 4.9 17"/>',
   wind: '<path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h8"/>',
   circle: '<circle cx="12" cy="12" r="9"/>',
   checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
@@ -722,7 +736,7 @@ const ICONS = {
   star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
 };
 const CAT_ICONS = { agua: 'drop', saude: 'health', energia: 'bolt', docs: 'doc', abrigo: 'tool', outros: 'box' };
-const GUIDE_ICONS = { sismo: 'quake', inundacao: 'wave', tsunami: 'wave', vento: 'wind', chuva: 'drop', incendio: 'flame', apagao: 'bolt', calor: 'sun', abrigo: 'home', evacuacao: 'route', telemovel: 'phone', simulacro: 'route' };
+const GUIDE_ICONS = { sismo: 'quake', inundacao: 'wave', tsunami: 'wave', vento: 'wind', chuva: 'drop', incendio_casa: 'flame', gas: 'alert', frio: 'snow', agua: 'drop', incendio: 'flame', apagao: 'bolt', calor: 'sun', abrigo: 'home', evacuacao: 'route', telemovel: 'phone', simulacro: 'route' };
 const catIcon = id => `<span class="cat-ic">${icon(CAT_ICONS[id] || 'box')}</span>`;
 const icon = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -738,7 +752,7 @@ function fieldHTML(f, v) {
       <div class="grid-buttons"><button type="button" class="btn" data-pick>${icon('map')} Escolher no mapa</button><button type="button" class="btn" data-here>${icon('pin')} Usar a minha posição</button></div>`;
     case 'checkbox': return `<label class="check"><input type="checkbox" name="${f.k}" ${v ? 'checked' : ''}> ${esc(f.label)}</label>`;
     case 'select': return `<label for="${id}">${esc(f.label)}</label><select id="${id}" name="${f.k}">${f.options.map(([val, txt]) => `<option value="${esc(val)}" ${val === v ? 'selected' : ''}>${esc(txt)}</option>`).join('')}</select>`;
-    case 'textarea': return `<label for="${id}">${esc(f.label)}</label><textarea id="${id}" name="${f.k}" rows="3" ${req}>${esc(v)}</textarea>`;
+    case 'textarea': return `<label for="${id}">${esc(f.label)}</label><textarea id="${id}" name="${f.k}" rows="${f.ph ? 2 : 3}" ${f.ph ? `placeholder="${esc(f.ph)}"` : ''} ${req}>${esc(v)}</textarea>`;
     default: return `<label for="${id}">${esc(f.label)}</label><input id="${id}" name="${f.k}" type="${f.type || 'text'}" value="${esc(v)}" ${req} ${f.type === 'number' ? 'min="0" step="any"' : ''} autocomplete="off">`;
   }
 }
@@ -843,11 +857,13 @@ function planSteps() {
   const st = stats(), drillOk = S.settings.lastDrill && Date.now() - S.settings.lastDrill < 182 * 864e5;
   const people = S.groups.reduce((n, g) => n + liveMembers(g).length, 0);
   const g = S.groups.find(x => x.meetingPoint || hasCoords(x));
-  const ess = S.kit.filter(isEssential), essOk = ess.filter(hasItem).length;
+  const ess = S.kit.filter(i => isEssential(i) && ['casa', 'mochila'].includes(i.kit || 'casa')), essOk = ess.filter(hasItem).length;
+  const g0 = S.groups[0], planN = g0 ? PLAN_FIELDS.filter(([k]) => g0[k]).length : 0;
   return [
     { t: 'A sua família', done: S.groups.length > 0 && (people > 1 || S.contacts.length > 0 || S.settings.household === 1), sub: people ? `${people} pessoa(s)` : 'Quem vive consigo', ...(S.groups.length ? { href: '#/grupos' } : { act: 'wizard', v: 1 }) },
     { t: 'Ponto de encontro', done: !!g, sub: g ? (g.meetingPoint || fmtCoords(g)) : 'Onde a família se encontra', ...(S.groups[0] ? (g ? { href: '#/grupos' } : { act: 'editMeetMain', id: S.groups[0].id }) : { act: 'wizard', v: 2 }) },
-    { t: 'Kit de 72 horas', done: essOk === ess.length && ess.length > 0, sub: `Essenciais: ${essOk} de ${ess.length}`, href: '#/kit' },
+    { t: 'Plano da família', done: planN >= 4, sub: planN ? `${planN} de ${PLAN_FIELDS.length} combinados` : 'Quem faz o quê, onde estão as coisas', ...(g0 ? { href: '#/plano' } : { act: 'wizard', v: 1 }) },
+    { t: 'Kit de casa e mochila', done: essOk === ess.length && ess.length > 0, sub: `Essenciais: ${essOk} de ${ess.length}`, href: '#/kit' },
     { t: 'Telemóvel preparado', done: !!S.settings.phoneReady, sub: 'Alertas de emergência e ficha médica', href: '#/agir/telemovel' },
     { t: 'Mapa sem internet', done: !!S.settings.mapSaved, sub: S.settings.mapSaved ? 'Guardado' : 'Guardar a zona de casa e do ponto', href: '#/mapa' },
     { t: 'Simulacro com a família', done: !!drillOk, sub: drillOk ? 'Feito em ' + new Date(S.settings.lastDrill).toLocaleDateString('pt-PT') : 'Ir juntos ao ponto de encontro', href: '#/agir/simulacro' },
@@ -881,33 +897,41 @@ function backupNote() {
   return `<p class="note small">${S.settings.lastBackup ? 'A última cópia de segurança tem mais de 3 meses.' : 'Ainda não fez cópia de segurança. Se perder o telemóvel, perde o plano.'} <a href="#/definicoes">Exportar →</a></p>`;
 }
 
-const isEssential = i => ESSENTIALS.some(k => i.name.startsWith(k));
+const isEssential = i => i.ess || ((i.kit || 'casa') === 'casa' && ESSENTIALS.some(k => i.name.startsWith(k)));
 const hasItem = i => (need(i) > 0 ? isOk(i) : i.have > 0);
+const kitOf = id => S.kit.filter(i => (i.kit || 'casa') === id);
+const tipFor = i => TIPS.find(([k]) => i.name.startsWith(k))?.[1] || '';
 function viewKit() {
-  const f = ui.kitFilter, st = stats();
+  const f = ui.kitFilter, tab = KITS.find(k => k.id === ui.kitTab) || KITS[0];
+  const items = kitOf(tab.id);
   const show = i => f === 'all' || (f === 'missing' && need(i) > 0 && !isOk(i)) || (f === 'expiring' && ['warn', 'bad'].includes(expiryState(i)?.cls));
-  const filters = [['all', 'Tudo'], ['missing', `Em falta${st.missing ? ' (' + st.missing + ')' : ''}`], ['expiring', 'Validade']];
-  const ess = S.kit.filter(isEssential), rest = S.kit.filter(i => !isEssential(i));
-  const essOk = ess.filter(hasItem).length, essShow = ess.filter(show);
-  const restShow = rest.filter(show), restMiss = rest.filter(i => need(i) > 0 && !isOk(i)).length;
+  const req = items.filter(i => need(i) > 0), okN = req.filter(isOk).length, pct = req.length ? Math.round((okN / req.length) * 100) : 0;
+  const missing = req.length - okN;
+  const ess = items.filter(isEssential), essOk = ess.filter(hasItem).length, essShow = ess.filter(show);
+  const rest = items.filter(i => !isEssential(i)), restShow = rest.filter(show), restMiss = rest.filter(i => need(i) > 0 && !isOk(i)).length;
+  const expN = items.filter(i => ['warn', 'bad'].includes(expiryState(i)?.cls)).length;
+  const filters = [['all', 'Tudo'], ['missing', `Em falta${missing ? ' (' + missing + ')' : ''}`], ['expiring', `Validade${expN ? ' (' + expN + ')' : ''}`]];
+  const tabInfo = k => { const e = kitOf(k.id).filter(isEssential); return `${e.filter(hasItem).length}/${e.length}`; };
   return `
+  <div class="kit-tabs" role="tablist">${KITS.map(k => `<button role="tab" aria-selected="${k.id === tab.id}" class="${k.id === tab.id ? 'on' : ''}" data-act="kitTab" data-v="${k.id}"><strong>${esc(k.short)}</strong><small>${tabInfo(k)}</small></button>`).join('')}</div>
   <section class="card hero">
-    <div class="ring" style="--p:${st.pct}"><span>${st.pct}%</span></div>
+    <div class="ring" style="--p:${pct}"><span>${pct}%</span></div>
     <div class="hero-body">
-      <h2>${essOk === ess.length && ess.length ? 'Essenciais completos' : `Essenciais: ${essOk} de ${ess.length}`}</h2>
-      <p class="muted">${st.missing ? `Faltam ${st.missing} coisas no total` : 'Kit completo'} · para ${S.settings.household} pessoa(s), 72 horas · <a href="#/definicoes">alterar</a></p>
-      ${st.expired || st.expiring ? `<p class="small"><span class="badge ${st.expired ? 'bad' : 'warn'}">${st.expired ? st.expired + ' expirado(s)' : st.expiring + ' a expirar'}</span></p>` : ''}
+      <h2>${esc(tab.name)}</h2>
+      <p class="muted">${esc(tab.desc)}</p>
+      <p class="small"><strong>${essOk === ess.length && ess.length ? 'Essenciais completos' : `Essenciais: ${essOk} de ${ess.length}`}</strong>${missing ? ` · faltam ${missing} no total` : ''}${tab.id !== 'animais' ? ` · para ${S.settings.household} pessoa(s) · <a href="#/definicoes">alterar</a>` : ''}</p>
     </div>
   </section>
-  <p class="muted small kit-help">Toque em <strong>Tenho</strong> quando já tiver a coisa em casa. Toque no nome para mudar a quantidade ou a validade.</p>
+  ${tab.id === 'animais' && !S.groups.some(g => livePets(g).length) ? '<p class="muted small kit-help">Se não tem animais, pode ignorar este kit.</p>' : ''}
+  <p class="muted small kit-help">Toque em <strong>Tenho</strong> quando já tiver a coisa. Toque no nome para ver <strong>como escolher</strong> e mudar a quantidade ou a validade.</p>
   <div class="toolbar">
     <div class="seg">${filters.map(([k, t]) => `<button class="${f === k ? 'on' : ''}" data-act="kitFilter" data-v="${k}">${t}</button>`).join('')}</div>
     <span class="spacer"></span><button class="btn" data-act="addItem">+ Coisa</button>
   </div>
-  ${essShow.length ? `<details class="card fold" data-fold="kit-ess" ${isOpen('kit-ess', true) ? 'open' : ''}>
-    <summary>${icon('star')}<span class="fold-t">Os ${ess.length} essenciais</span><span class="count ${essOk === ess.length ? 'good' : 'warn'}">${essOk}/${ess.length}</span></summary>
+  ${essShow.length ? `<details class="card fold" data-fold="ess-${tab.id}" ${isOpen('ess-' + tab.id, true) ? 'open' : ''}>
+    <summary>${icon('star')}<span class="fold-t">Essenciais</span><span class="count ${essOk === ess.length ? 'good' : 'warn'}">${essOk}/${ess.length}</span></summary>
     <ul class="list">${essShow.map(kitRow).join('')}</ul></details>` : ''}
-  ${restShow.length ? `<details class="card fold" data-fold="kit-rest" ${isOpen('kit-rest', f !== 'all') ? 'open' : ''}>
+  ${restShow.length ? `<details class="card fold" data-fold="rest-${tab.id}" ${isOpen('rest-' + tab.id, f !== 'all') ? 'open' : ''}>
     <summary>${icon('kit')}<span class="fold-t">Mais coisas úteis</span><span class="count ${restMiss ? '' : 'good'}">${restMiss ? restMiss + ' em falta' : 'completo'}</span></summary>
     ${CATEGORIES.map(c => { const it = restShow.filter(i => i.cat === c.id); return it.length ? `<h4 class="sub-h">${catIcon(c.id)} ${esc(c.name)}</h4><ul class="list">${it.map(kitRow).join('')}</ul>` : ''; }).join('')}
   </details>` : ''}
@@ -926,21 +950,24 @@ function kitRow(i) {
   </li>`;
 }
 function itemForm(item) {
+  const tip = item ? tipFor(item) : '';
   openForm({
-    title: item ? 'Editar item' : 'Novo item',
-    values: item || { cat: 'outros', qty: 1, unit: 'un', have: 0 },
+    title: item ? item.name : 'Nova coisa no kit',
+    values: item || { cat: 'outros', qty: 1, unit: 'un', have: 0, kit: ui.kitTab || 'casa' },
     fields: [
+      ...(tip ? [{ type: 'info', html: `<span class="tip"><strong>Como escolher:</strong> ${esc(tip)}</span>` }] : []),
       { k: 'name', label: 'Nome', required: true },
-      { k: 'cat', label: 'Categoria', type: 'select', options: CATEGORIES.map(c => [c.id, c.name]) },
-      { k: 'qty', label: 'Quantidade recomendada', type: 'number' },
-      { k: 'unit', more: 'Mais detalhes', label: 'Unidade' },
-      { k: 'perPerson', more: 'Mais detalhes', label: 'Quantidade por pessoa do agregado', type: 'checkbox' },
       { k: 'have', label: 'Quantidade que tenho', type: 'number' },
       { k: 'expiry', label: 'Data de validade', type: 'date' },
+      { k: 'kit', more: 'Mais detalhes', label: 'Em que kit', type: 'select', options: KITS.map(k => [k.id, k.name]) },
+      { k: 'cat', more: 'Mais detalhes', label: 'Categoria', type: 'select', options: CATEGORIES.map(c => [c.id, c.name]) },
+      { k: 'qty', more: 'Mais detalhes', label: 'Quantidade recomendada', type: 'number' },
+      { k: 'unit', more: 'Mais detalhes', label: 'Unidade' },
+      { k: 'perPerson', more: 'Mais detalhes', label: 'Quantidade por pessoa do agregado', type: 'checkbox' },
       { k: 'location', more: 'Mais detalhes', label: 'Onde está guardado' },
       { k: 'notes', more: 'Mais detalhes', label: 'Notas', type: 'textarea' },
     ],
-    onSave(v) { if (item) Object.assign(item, v); else S.kit.push({ id: uid(), expires: false, ...v }); },
+    onSave(v) { if (item) Object.assign(item, v); else S.kit.push({ id: uid(), expires: false, ess: false, ...v }); },
     onDelete: item && (() => { S.kit = S.kit.filter(x => x !== item); }),
   });
 }
@@ -1076,7 +1103,7 @@ function groupForm(g, defaults) {
       delete v.myName;
       const now = Date.now();
       if (g) {
-        for (const k of GROUP_FIELDS) if (String(v[k] ?? '') !== String(g[k] ?? '')) { g[k] = v[k]; (g.meta ||= {})[k] = now; }
+        for (const k of GROUP_FIELDS) if (k in v && String(v[k] ?? '') !== String(g[k] ?? '')) { g[k] = v[k]; (g.meta ||= {})[k] = now; }
         markDirty(g);
       } else {
         const ng = { id: uid(), members: [], ...v, meta: Object.fromEntries(GROUP_FIELDS.map(k => [k, now])) };
@@ -1819,7 +1846,7 @@ function viewChat() {
 const ROUTES = {
   painel: ['Início', 'home', viewDashboard, 1, ''],
   preparar: ['Preparar', 'list', viewPrepare, 1, 'O seu plano, passo a passo.'],
-  kit: ['Kit de emergência', 'kit', viewKit, 1, '72 horas de autonomia para a sua casa.'],
+  kit: ['Kit de emergência', 'kit', viewKit, 1, 'Casa, mochila de evacuação, carro e animais.'],
   mapa: ['Pontos de encontro', 'map', viewMap, 1, 'Do seu grupo e oficiais dos municípios.'],
   alertas: ['Avisos', 'alert', viewAlerts, 1, 'IPMA, para a sua zona.'],
   contactos: ['Contactos', 'phone', viewContacts, 0, 'Emergência e pessoais'],
@@ -1832,6 +1859,7 @@ const ROUTES = {
 ROUTES.chat = ['Chat do grupo', 'chat', viewChat, -1, 'Cifrado entre os membros.'];
 ROUTES.emergencia = ['Modo emergência', 'alert', viewEmergency, -1, 'O essencial, em poucos toques.'];
 ROUTES.agir = ['O que fazer agora', 'alert', viewAct, -1, ''];
+ROUTES.plano = ['Plano da família', 'list', viewPlan, -1, 'Quem faz o quê numa emergência. Igual para toda a família.'];
 ROUTES.cartao = ['Cartão da família', 'users', viewCard, -1, 'Para imprimir e guardar no kit e na carteira.'];
 const route = () => {
   const r = location.hash.slice(2);
@@ -1846,7 +1874,7 @@ const route = () => {
   return ROUTES[r] && r !== 'chat' ? r : 'painel';
 };
 
-const NAV_SHORT = { agir: 'Emergência', kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre', guia: 'O que fazer', emergencia: 'Emergência', cartao: 'Cartão', mais: 'Menu' };
+const NAV_SHORT = { plano: 'Plano', agir: 'Emergência', kit: 'Kit', mapa: 'Mapa', alertas: 'Avisos', sobre: 'Sobre', guia: 'O que fazer', emergencia: 'Emergência', cartao: 'Cartão', mais: 'Menu' };
 
 function pageHead(r, title) {
   if (r === 'painel') {
@@ -1991,6 +2019,7 @@ function viewAct() {
     ${end ? (g.prep ? '<a class="btn" href="#/preparar">Voltar ao plano</a>' : '<a class="btn primary" href="#/emergencia">Outras situações</a>') : `<button class="btn primary" data-act="stepNext">${i === n - 1 ? 'Concluir ✓' : 'Seguinte ›'}</button>`}
   </div>
   ${goRow}
+  ${g.id === 'evacuacao' ? (() => { const e = kitOf('mochila').filter(isEssential); return `<a class="now-row" href="#/kit" data-act="kitTab" data-v="mochila">${icon('kit')}<span class="now-t"><strong>A sua mochila de evacuação</strong><small>Essenciais: ${e.filter(hasItem).length} de ${e.length}</small></span><span class="chev" aria-hidden="true">›</span></a>`; })() : ''}
   <details class="card fold" data-fold="all-steps" ${isOpen('all-steps', false) ? 'open' : ''}>
     <summary>${icon('list')}<span class="fold-t">Ver todos os passos</span></summary>
     <ol class="all-steps">${steps.map((t, k) => `<li class="${k < i ? 'done' : ''}">${esc(t)}</li>`).join('')}</ol>
@@ -2060,6 +2089,7 @@ function viewEmergency() {
     <h3>O que está a acontecer?</h3>
     <div class="tiles">${tiles.map(g => { const sg = sug.find(x => x.id === g.id); return `<a class="tile ${sg ? 'suggested' : ''}" href="#/agir/${g.id}">${icon(GUIDE_ICONS[g.id] || 'alert')}<strong>${esc(g.title)}</strong><small>${sg ? esc(sg.why) : guideSteps(g).length + ' passos'}</small></a>`; }).join('')}</div>
   </section>
+  ${S.groups[0] && PLAN_FIELDS.some(([k]) => S.groups[0][k]) ? `<section class="card"><h3>O vosso plano</h3><ul class="plan-list compact">${PLAN_FIELDS.filter(([k]) => S.groups[0][k]).map(([k, label]) => `<li><div><span class="label">${esc(label)}</span><p>${esc(S.groups[0][k])}</p></div></li>`).join('')}</ul></section>` : ''}
   ${calls.length ? `<section class="card"><h3>Ligar</h3><ul class="list">${calls.map(([n, p]) => `<li class="row"><div class="row-main"><div class="row-title">${esc(n)}</div></div>
     <a class="btn" href="${telHref(p)}" aria-label="Ligar a ${esc(n)}">${icon('phone')} ${esc(p)}</a></li>`).join('')}</ul></section>` : ''}
   ${health.length ? `<section class="card"><h3>Saúde (para quem socorre)</h3><ul class="list">${health.map(m => `<li class="row"><div class="row-main">
@@ -2075,6 +2105,33 @@ function viewEmergency() {
     </ul>
   </section>
   <p class="crisis-exit"><a href="#/painel">‹ Sair do modo emergência</a></p>`;
+}
+
+// ---------- Plano da família (fica no grupo e é igual para todos) ----------
+function viewPlan() {
+  const g = S.groups[0];
+  if (!g) return `<section class="card"><h3>Comece pela sua família</h3><p class="muted">O plano fica guardado com a família.</p><button class="btn primary" data-act="wizard" data-v="1">Começar</button></section>`;
+  const done = PLAN_FIELDS.filter(([k]) => g[k]).length;
+  return `
+  <section class="card">
+    <h3>O que combinámos · ${done} de ${PLAN_FIELDS.length}</h3>
+    <ul class="plan-list">${PLAN_FIELDS.map(([k, label]) => `<li class="${g[k] ? 'done' : ''}">${icon(g[k] ? 'checkCircle' : 'circle')}<div><span class="label">${esc(label)}</span><p>${g[k] ? esc(g[k]) : '<span class="muted">Por combinar</span>'}</p></div></li>`).join('')}</ul>
+    <button class="btn primary wide" data-act="editPlan" data-id="${g.id}">${done ? 'Editar o plano' : 'Combinar o plano'}</button>
+    <p class="muted small">${isShared(g) ? 'O plano é partilhado com a família e atualiza-se em todos os telemóveis.' : 'Partilhe a família (em Família) para todos terem o mesmo plano.'} Também sai no cartão para imprimir.</p>
+  </section>`;
+}
+function planForm(g) {
+  if (!g) return startWizard(1);
+  openForm({
+    title: 'Plano da família',
+    values: g,
+    fields: [{ type: 'info', html: 'Combinem isto juntos, à mesa. Uma frase chega.' }, ...PLAN_FIELDS.map(([k, label, ph]) => ({ k, label, type: 'textarea', ph }))],
+    onSave(v) {
+      const now = Date.now();
+      for (const [k] of PLAN_FIELDS) if (String(v[k] ?? '') !== String(g[k] ?? '')) { g[k] = str(v[k], 500); (g.meta ||= {})[k] = now; }
+      markDirty(g);
+    },
+  });
 }
 
 // ---------- Cartão da família (para imprimir) ----------
@@ -2094,6 +2151,7 @@ function viewCard() {
       ${g.meetingPoint || hasCoords(g) ? `<tr><th>Ponto de encontro</th><td>${esc(g.meetingPoint || '')}${hasCoords(g) ? `<br><span class="mono">${fmtCoords(g)}</span>` : ''}</td></tr>` : ''}
       ${rows(livePoints(g).map(x => `<tr><th>${esc(MEET_KINDS[x.kind])}</th><td>${esc(x.name)}${x.notes ? ' — ' + esc(x.notes) : ''}${hasCoords(x) ? `<br><span class="mono">${fmtCoords(x)}</span>` : ''}</td></tr>`))}
     </table>
+    ${PLAN_FIELDS.some(([k]) => g[k]) ? `<h4 class="sub-h">O nosso plano</h4><table>${PLAN_FIELDS.filter(([k]) => g[k]).map(([k, label]) => `<tr><th>${esc(label)}</th><td>${esc(g[k])}</td></tr>`).join('')}</table>` : ''}
     ${liveMembers(g).length ? `<h4 class="sub-h">Pessoas</h4><table>${liveMembers(g).map(m => `<tr><th>${esc(m.name)}${m.role ? `<br><span class="small">${esc(m.role)}</span>` : ''}</th>
       <td>${esc(m.phone || '')}${m.consent && HEALTH_FIELDS.some(k => m[k]) ? `<br><span class="small">${esc([m.blood, m.allergies && 'Alergias: ' + m.allergies, m.meds && 'Medicação: ' + m.meds, m.needs].filter(Boolean).join(' · '))}</span>` : ''}</td></tr>`).join('')}</table>` : ''}
     ${livePets(g).length ? `<h4 class="sub-h">Animais</h4><table>${livePets(g).map(a => `<tr><th>${esc(a.name)}<br><span class="small">${esc([a.species, a.breed].filter(Boolean).join(' · '))}</span></th>
@@ -2229,6 +2287,8 @@ const actions = {
   drillDone: () => { S.settings.lastDrill = Date.now(); toast('Registado. Próximo lembrete daqui a 6 meses.'); scheduleNativeReminders(); },
   drillLater: () => { S.settings.drillSnooze = Date.now() + 30 * 864e5; },
   phoneReady: () => { S.settings.phoneReady = true; },
+  kitTab: d => { ui.kitTab = d.v; ui.kitFilter = 'all'; if (route() !== 'kit') { location.hash = '#/kit'; return 'async'; } },
+  editPlan: d => { planForm(findGroup(d.id) || S.groups[0]); return 'async'; },
   wizard: d => { startWizard(Number(d.v) || 1); return 'async'; },
   guideDone: () => {
     if (ui.guide === 'telemovel') S.settings.phoneReady = true;

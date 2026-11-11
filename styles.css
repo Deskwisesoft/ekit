@@ -537,3 +537,20 @@ button.now-row { width: 100%; border: 0; font: inherit; text-align: left; cursor
 /* Preparar: próximo passo em destaque */
 .door.next-step { margin: 4px 0 8px; border-color: var(--accent); background: var(--accent-soft); min-height: 72px; }
 .door.next-step .door-t strong { font-size: 1.15rem; }
+
+/* Kits por situação */
+.kit-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.kit-tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 60px; padding: 8px 4px; border: 1.5px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+.kit-tabs button strong { font-size: .98rem; }
+.kit-tabs button small { color: var(--muted); font-size: .8rem; font-weight: 600; }
+.kit-tabs button.on { border-color: var(--accent); background: var(--accent-soft); }
+.kit-tabs button.on small { color: var(--accent); }
+.tip { display: block; background: var(--accent-soft); color: var(--text); padding: 10px 12px; border-radius: var(--radius); }
+/* Plano da família */
+.plan-list { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 4px; }
+.plan-list li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+.plan-list li:first-child { border-top: 0; }
+.plan-list li > .ic { flex: none; margin-top: 2px; color: var(--strong-line); }
+.plan-list li.done > .ic { color: var(--good); }
+.plan-list p { margin: 2px 0 0; }
+.plan-list.compact li { padding: 6px 0; }
