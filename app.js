@@ -842,7 +842,7 @@ function viewDashboard() {
       : `<a class="now-row" href="#/preparar" data-act="wizard" data-v="2">${icon('pin')}<span class="now-t"><strong>Definir ponto de encontro</strong><small>Onde a família se encontra</small></span><span class="chev" aria-hidden="true">›</span></a>`;
   return `
   <a class="door sos" href="#/emergencia">${icon('alert')}<span class="door-t"><strong>Há uma emergência</strong><small>Avisar a família, para onde ir, o que fazer</small></span><span class="chev" aria-hidden="true">›</span></a>
-  <a class="door" href="#/preparar">${icon('list')}<span class="door-t"><strong>Preparar-me</strong><small>${done === steps.length ? 'Plano completo' : `${done} de ${steps.length} passos feitos`}</small>
+  <a class="door" href="#/preparar">${icon('list')}<span class="door-t"><strong>Preparar-me</strong><small>${done === steps.length ? 'Plano completo' : `Próximo: ${esc(steps.find(x => !x.done).t)} · ${done} de ${steps.length} feitos`}</small>
     <span class="bar"><i style="width:${Math.round((done / steps.length) * 100)}%"></i></span></span><span class="chev" aria-hidden="true">›</span></a>
   <section class="card now">
     <h3>Agora · ${esc(IPMA_AREAS[S.settings.district] || '')}</h3>
@@ -910,7 +910,7 @@ function viewKit() {
   const ess = items.filter(isEssential), essOk = ess.filter(hasItem).length, essShow = ess.filter(show);
   const rest = items.filter(i => !isEssential(i)), restShow = rest.filter(show), restMiss = rest.filter(i => need(i) > 0 && !isOk(i)).length;
   const expN = items.filter(i => ['warn', 'bad'].includes(expiryState(i)?.cls)).length;
-  const filters = [['all', 'Tudo'], ['missing', `Em falta${missing ? ' (' + missing + ')' : ''}`], ['expiring', `Validade${expN ? ' (' + expN + ')' : ''}`]];
+  const onlyMissing = f === 'missing';
   const tabInfo = k => { const e = kitOf(k.id).filter(isEssential); return `${e.filter(hasItem).length}/${e.length}`; };
   return `
   <div class="kit-tabs" role="tablist">${KITS.map(k => `<button role="tab" aria-selected="${k.id === tab.id}" class="${k.id === tab.id ? 'on' : ''}" data-act="kitTab" data-v="${k.id}"><strong>${esc(k.short)}</strong><small>${tabInfo(k)}</small></button>`).join('')}</div>
@@ -919,14 +919,14 @@ function viewKit() {
     <div class="hero-body">
       <h2>${esc(tab.name)}</h2>
       <p class="muted">${esc(tab.desc)}</p>
+      ${expN ? `<p class="small"><button class="badge warn linkish" data-act="kitFilter" data-v="${f === 'expiring' ? 'all' : 'expiring'}">${f === 'expiring' ? 'Ver tudo' : `${expN} a expirar · ver`}</button></p>` : ''}
       <p class="small"><strong>${essOk === ess.length && ess.length ? 'Essenciais completos' : `Essenciais: ${essOk} de ${ess.length}`}</strong>${missing ? ` · faltam ${missing} no total` : ''}${tab.id !== 'animais' ? ` · para ${S.settings.household} pessoa(s) · <a href="#/definicoes">alterar</a>` : ''}</p>
     </div>
   </section>
   ${tab.id === 'animais' && !S.groups.some(g => livePets(g).length) ? '<p class="muted small kit-help">Se não tem animais, pode ignorar este kit.</p>' : ''}
-  <p class="muted small kit-help">Toque em <strong>Tenho</strong> quando já tiver a coisa. Toque no nome para ver <strong>como escolher</strong> e mudar a quantidade ou a validade.</p>
-  <div class="toolbar">
-    <div class="seg">${filters.map(([k, t]) => `<button class="${f === k ? 'on' : ''}" data-act="kitFilter" data-v="${k}">${t}</button>`).join('')}</div>
-    <span class="spacer"></span><button class="btn" data-act="addItem">+ Coisa</button>
+  <div class="kit-bar">
+    <p class="muted small">Toque em <strong>Tenho</strong> quando já tiver. Toque no nome para ver como escolher.</p>
+    <label class="switch"><input type="checkbox" data-act="kitFilter" data-v="${onlyMissing ? 'all' : 'missing'}" ${onlyMissing ? 'checked' : ''}> Só o que falta${missing ? ` (${missing})` : ''}</label>
   </div>
   ${essShow.length ? `<details class="card fold" data-fold="ess-${tab.id}" ${isOpen('ess-' + tab.id, true) ? 'open' : ''}>
     <summary>${icon('star')}<span class="fold-t">Essenciais</span><span class="count ${essOk === ess.length ? 'good' : 'warn'}">${essOk}/${ess.length}</span></summary>
@@ -935,7 +935,8 @@ function viewKit() {
     <summary>${icon('kit')}<span class="fold-t">Mais coisas úteis</span><span class="count ${restMiss ? '' : 'good'}">${restMiss ? restMiss + ' em falta' : 'completo'}</span></summary>
     ${CATEGORIES.map(c => { const it = restShow.filter(i => i.cat === c.id); return it.length ? `<h4 class="sub-h">${catIcon(c.id)} ${esc(c.name)}</h4><ul class="list">${it.map(kitRow).join('')}</ul>` : ''; }).join('')}
   </details>` : ''}
-  ${!essShow.length && !restShow.length ? '<p class="empty">Nada neste filtro.</p>' : ''}`;
+  ${!essShow.length && !restShow.length ? `<p class="empty">${f === 'missing' ? 'Não falta nada neste kit.' : 'Nada para mostrar.'}</p>` : ''}
+  <button class="btn ghost" data-act="addItem">+ Acrescentar uma coisa a este kit</button>`;
 }
 function kitRow(i) {
   const n = need(i), ok = hasItem(i), e = expiryState(i);
@@ -1882,7 +1883,8 @@ function pageHead(r, title) {
     return `<header class="page-head"><span class="eyebrow">${esc(d)}</span><h1>O que precisa agora?</h1></header>`;
   }
   const desc = ROUTES[r][4];
-  return `<header class="page-head"><h1>${esc(title)}</h1>${desc ? `<p>${esc(desc)}</p>` : ''}</header>`;
+  const back = { plano: ['#/preparar', 'Preparar'], cartao: ['#/preparar', 'Preparar'], definicoes: ['#/mais', 'Menu'], sobre: ['#/mais', 'Menu'], chat: ['#/grupos', 'Família'], contactos: ['#/mais', 'Menu'], guia: ['#/mais', 'Menu'] }[r];
+  return `<header class="page-head">${back ? `<a class="back" href="${back[0]}">‹ ${back[1]}</a>` : ''}<h1>${esc(title)}</h1>${desc ? `<p>${esc(desc)}</p>` : ''}</header>`;
 }
 
 function viewAbout() {
