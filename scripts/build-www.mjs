@@ -2,7 +2,7 @@
 import { cpSync, mkdirSync, rmSync } from 'node:fs';
 
 const FILES = [
-  'index.html', 'styles.css', 'app.js', 'chat.js', 'data.js', 'pontos-encontro.json',
+  'index.html', 'styles.css', 'app.js', 'chat.js', 'data.js', 'i18n.js', 'i18n-en.js', 'pontos-encontro.json',
   'manifest.webmanifest', 'icon.svg', 'icons', 'vendor', 'privacidade.html',
 ];
 

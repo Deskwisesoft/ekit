@@ -3,6 +3,7 @@ import {
   IPMA_AREAS, IPMA_WARNINGS_URL, ALERT_SOURCES, LISBOA_POINTS_URL, DISTRICT_CAPITALS, OVERPASS_URLS, SEISMIC_URL,
   RADIO_A1, RADIO_SOURCE, FIRE_RISK_URL, FIRE_LEVELS, ALERT_GUIDES, ESSENTIALS, KITS, EXTRA_KIT, TIPS, KIT_RENAME,
 } from './data.js';
+import { tr, setLang, LANG, LOC, translateTree, watchI18n, autoLang } from './i18n.js';
 import { GroupHub, newChatConfig, newIdentity, pubkeyOf, loadNostr, DEFAULT_RELAYS, publishInvite, fetchInvite, newInviteCode, normalizeCode } from './chat.js';
 const SITE_URL = 'https://deskwisesoft.github.io/ekit/';
 
@@ -132,7 +133,7 @@ function cleanState(s) {
     autoDistrict: st.autoDistrict !== false,
     radio: str(st.radio, 60), lastBackup: num(st.lastBackup), mapSaved: num(st.mapSaved), mapSavedN: num(st.mapSavedN),
     lastDrill: num(st.lastDrill), drillSnooze: num(st.drillSnooze), phoneReady: !!st.phoneReady,
-    bigText: !!st.bigText, contrast: !!st.contrast,
+    bigText: !!st.bigText, contrast: !!st.contrast, lang: ['pt', 'en'].includes(st.lang) ? st.lang : '',
   };
   out.kit = Array.isArray(s.kit) ? s.kit.map(shortItem).map(i => ({
     id: idOf(i?.id), cat: CATEGORIES.some(c => c.id === i?.cat) ? i.cat : 'outros', name: str(i?.name, 200), qty: Math.max(0, num(i?.qty)),
@@ -338,7 +339,7 @@ const serviceRow = ({ s, d }) => `<li class="row"><div class="row-main"><div cla
 // ---------- Utilitários ----------
 const $ = sel => document.querySelector(sel);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fmtDate = d => (d ? new Date(d + 'T00:00').toLocaleDateString('pt-PT') : '');
+const fmtDate = d => (d ? new Date(d + 'T00:00').toLocaleDateString(LOC()) : '');
 const telHref = p => 'tel:' + String(p).replace(/[^\d+]/g, '');
 
 function daysLeft(date) {
@@ -628,7 +629,7 @@ function recentQuakes(days = 7) {
 }
 // Sismo forte nas últimas 24 h perto de si: aparece no Painel.
 const strongQuake = () => recentQuakes(1).find(q => q.mag >= 4 && (q.d == null || q.d <= 300));
-const quakeWhen = q => new Date(quakeTs(q)).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const quakeWhen = q => new Date(quakeTs(q)).toLocaleString(LOC(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 function quakeBanner(q) {
   return `<a class="alert-banner ${q.mag >= 5 ? 'bad' : 'orange'}" href="#/emergencia">${icon('quake')}
     <div><strong>Sismo de magnitude ${q.mag.toFixed(1).replace('.', ',')}</strong>
@@ -688,8 +689,8 @@ const SEV = { red: 3, orange: 2, yellow: 1 };
 function when(s) {
   const d = new Date(s), t = new Date();
   const day = (Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())) / 864e5;
-  const label = { 0: 'hoje', 1: 'amanhã', '-1': 'ontem' }[day] || d.toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' });
-  return `${label} às ${d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`;
+  const label = { 0: 'hoje', 1: 'amanhã', '-1': 'ontem' }[day] || d.toLocaleDateString(LOC(), { day: 'numeric', month: 'short' });
+  return `${label} às ${d.toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' })}`;
 }
 const alertWhen = w => (Date.parse(w.startTime) <= Date.now() ? `Ativo até ${when(w.endTime)}` : `De ${when(w.startTime)} até ${when(w.endTime)}`);
 function alertCard(w) {
@@ -845,7 +846,7 @@ function nowRows() {
   if (nAl > 2) rows.push(['', 'alert', `Mais ${nAl - 2} aviso${nAl - 2 === 1 ? '' : 's'}`, 'Ver todos os avisos', '#/alertas']);
   const fr = fireRiskHere();
   if (fr && fr.today >= 3) rows.push([fr.today >= 4 ? 'bad' : 'warn', 'flame', `Risco de incêndio ${FIRE_LEVELS[fr.today].toLowerCase()}`, 'Hoje · sem queimadas nem fogo', '#/alertas']);
-  if (!rows.length) rows.push(['good', 'check', 'Sem avisos', S.alertsCache?.at ? 'Atualizado ' + new Date(S.alertsCache.at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }) : 'Abra com internet para atualizar', '#/alertas']);
+  if (!rows.length) rows.push(['good', 'check', 'Sem avisos', S.alertsCache?.at ? 'Atualizado ' + new Date(S.alertsCache.at).toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' }) : 'Abra com internet para atualizar', '#/alertas']);
   return rows.map(([cls, ic, t, sub, href]) => `<a class="now-row ${cls}" href="${href}">${icon(ic)}<span class="now-t"><strong>${esc(t)}</strong><small>${esc(sub)}</small></span><span class="chev" aria-hidden="true">›</span></a>`).join('');
 }
 function viewDashboard() {
@@ -887,7 +888,7 @@ function planSteps() {
     })(),
     { t: 'Telemóvel preparado', done: !!S.settings.phoneReady, sub: 'Alertas de emergência e ficha médica', href: '#/agir/telemovel' },
     { t: 'Mapa sem internet', done: !!S.settings.mapSaved, sub: S.settings.mapSaved ? 'Guardado' : 'Guardar a zona de casa e do ponto', href: '#/mapa' },
-    { t: 'Simulacro com a família', done: !!drillOk, sub: drillOk ? 'Feito em ' + new Date(S.settings.lastDrill).toLocaleDateString('pt-PT') : 'Ir juntos ao ponto de encontro', href: '#/agir/simulacro' },
+    { t: 'Simulacro com a família', done: !!drillOk, sub: drillOk ? 'Feito em ' + new Date(S.settings.lastDrill).toLocaleDateString(LOC()) : 'Ir juntos ao ponto de encontro', href: '#/agir/simulacro' },
   ];
 }
 function viewPrepare() {
@@ -1027,7 +1028,7 @@ function viewContacts() {
       ${mine.some(c => c.phone) || found.some(x => x.s.phone) ? '' : `<button class="btn ghost sm" data-act="addSvc" data-v="${k}">+ Acrescentar o número</button>`}`;
     }).join('')}
     ${healthNear(2) ? `<h4 class="sub-h">${icon('health')} Saúde perto</h4>${healthNear(2)}` : ''}
-    ${S.services ? `<p class="muted small">Fonte: OpenStreetMap (${new Date(S.services.at).toLocaleDateString('pt-PT')}). Confirme os números no site da sua câmara.</p>` : ''}
+    ${S.services ? `<p class="muted small">Fonte: OpenStreetMap (${new Date(S.services.at).toLocaleDateString(LOC())}). Confirme os números no site da sua câmara.</p>` : ''}
     <p class="note small">Para urgências, ligue <strong>112</strong>.</p>
     <button class="btn" data-act="findServices" ${ui.servicesLoading ? 'disabled' : ''}>${icon('pin')} ${ui.servicesLoading ? 'A procurar…' : S.services ? 'Atualizar perto de mim' : 'Procurar perto de mim'}</button>
     <p class="muted small">Envia a posição aproximada (~1 km).</p>
@@ -1300,7 +1301,7 @@ function viewAlerts() {
       <button class="btn primary" data-act="fetchAlerts" ${ui.alertsLoading ? 'disabled' : ''}>${ui.alertsLoading ? 'A atualizar…' : 'Atualizar'}</button>
     </div>
     ${ui.alertsError ? `<p class="badge warn block">${esc(ui.alertsError)}</p>` : ''}
-    <p class="muted small">${at ? 'Última atualização: ' + new Date(at).toLocaleString('pt-PT') : 'Ainda sem dados. Carregue em Atualizar com ligação à internet.'} · Fonte: IPMA</p>
+    <p class="muted small">${at ? 'Última atualização: ' + new Date(at).toLocaleString(LOC()) : 'Ainda sem dados. Carregue em Atualizar com ligação à internet.'} · Fonte: IPMA</p>
     ${alerts.length ? `<ul class="list">${alerts.map(alertCard).join('')}</ul>` : '<p class="empty">Sem avisos meteorológicos ativos para esta zona.</p>'}
   </section>
   <section class="card">
@@ -1347,7 +1348,7 @@ function viewMap() {
     ${ui.pos ? `<ul class="list">${nearest.map(({ p, d }) => `
       <li class="row"><div class="row-main">
         <div class="row-title">${esc(p.n)} <span class="badge ${p.t === 'Tsunami' ? 'warn' : ''}">${esc(p.m)}${p.t === 'Tsunami' ? ' · tsunami' : ''}</span></div>
-        <div class="row-sub"><strong>${fmtDist(d)}</strong> para ${bearing(ui.pos, p)} · <span class="mono">${fmtCoords(p)}</span>${p.cap ? ` · capacidade ${p.cap.toLocaleString('pt-PT')} pessoas` : ''}</div>
+        <div class="row-sub"><strong>${fmtDist(d)}</strong> para ${bearing(ui.pos, p)} · <span class="mono">${fmtCoords(p)}</span>${p.cap ? ` · capacidade ${p.cap.toLocaleString(LOC())} pessoas` : ''}</div>
         <div class="row-sub">${navLinks(p, p.n)}</div>
         ${p.mine ? '' : `<div class="row-sub"><button class="btn sm ghost" data-act="useOfficial" data-i="${p.i}">${icon('users')} Usar no grupo</button></div>`}
       </div></li>`).join('')}</ul>`
@@ -1362,13 +1363,13 @@ function viewMap() {
     <h3>Mapa sem internet</h3>
     ${`
     <div class="progress" ${ui.tilesTotal ? '' : 'hidden'}><i id="tiles-bar"></i></div>
-    <p class="small" id="tiles-msg">${S.settings.mapSaved ? `Zona guardada em ${new Date(S.settings.mapSaved).toLocaleDateString('pt-PT')} (${S.settings.mapSavedN} partes).` : ''}</p>
+    <p class="small" id="tiles-msg">${S.settings.mapSaved ? `Zona guardada em ${new Date(S.settings.mapSaved).toLocaleDateString(LOC())} (${S.settings.mapSavedN} partes).` : ''}</p>
     <button class="btn" data-act="saveMap" ${ui.tilesTotal ? 'disabled' : ''}>${icon('map')} ${S.settings.mapSaved ? 'Atualizar mapa guardado' : 'Guardar mapa da minha zona'}</button>`}
   </section>
   <details class="card fold" data-fold="mapdata" ${isOpen('mapdata', false) ? 'open' : ''}>
     <summary>${icon('shield')}<span class="fold-t">Dados oficiais</span></summary>
     <ul class="plain">${POINTS_META.sources.map(s => `<li><strong>${esc(s.m)}</strong>: <a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a> — ${esc(s.license)}</li>`).join('')}</ul>
-    <p class="muted small">${POINTS.length} pontos, disponíveis offline.${at ? ' Lisboa atualizada em ' + new Date(at).toLocaleString('pt-PT') + '.' : ''}</p>
+    <p class="muted small">${POINTS.length} pontos, disponíveis offline.${at ? ' Lisboa atualizada em ' + new Date(at).toLocaleString(LOC()) + '.' : ''}</p>
     <button class="btn" data-act="refreshLisboa" ${ui.pointsLoading ? 'disabled' : ''}>${ui.pointsLoading ? 'A atualizar…' : 'Atualizar pontos de Lisboa'}</button>
   </details>
 `;
@@ -1495,7 +1496,7 @@ function initMap() {
 function drawMarkers() {
   mapLayer.clearLayers();
   officialMarkers.length = 0;
-  const popup = (p, title) => `<strong>${esc(title)}</strong><br>${esc(p.m || '')}${p.f ? ' · ' + esc(p.f) : ''}${p.cap ? '<br>Capacidade: ' + Number(p.cap).toLocaleString('pt-PT') : ''}<br><span class="mono">${fmtCoords(p)}</span><br>${navLinks(p, title)}`;
+  const popup = (p, title) => `<strong>${esc(title)}</strong><br>${esc(p.m || '')}${p.f ? ' · ' + esc(p.f) : ''}${p.cap ? '<br>Capacidade: ' + Number(p.cap).toLocaleString(LOC()) : ''}<br><span class="mono">${fmtCoords(p)}</span><br>${navLinks(p, title)}`;
   (S.services?.list || []).filter(v => HEALTH[v.k]).forEach(v => {
     const c = v.k === 'hosp' ? '#dc2626' : '#16a34a';
     L.circleMarker([v.lat, v.lng], { radius: 6, color: '#fff', fillColor: c, fillOpacity: 1, weight: 2 })
@@ -1535,6 +1536,12 @@ function viewSettings() {
   </section>
   <section class="card form">
     <h3>Avisos e ecrã</h3>
+    <label for="lang">Língua · Language</label>
+    <select id="lang" data-change="lang" data-notr>
+      <option value="" ${!S.settings.lang ? 'selected' : ''}>Automática · Automatic</option>
+      <option value="pt" ${S.settings.lang === 'pt' ? 'selected' : ''}>Português</option>
+      <option value="en" ${S.settings.lang === 'en' ? 'selected' : ''}>English</option>
+    </select>
     <label class="check"><input type="checkbox" data-change="autoDistrict" ${S.settings.autoDistrict ? 'checked' : ''}> Escolher a zona dos avisos pela localização</label>
     ${S.lastPos ? `<p class="small"><button class="linkbtn" data-act="forgetPos">Esquecer a última posição</button></p>` : ''}
     <label class="check"><input type="checkbox" data-change="chatNotify" ${S.settings.chatNotify ? 'checked' : ''}> Notificar mensagens da família</label>
@@ -1558,7 +1565,7 @@ function viewSettings() {
   </section>
   <section class="card">
     <h3>Dados e privacidade</h3>
-    <p class="muted small">Os dados ficam neste telemóvel. ${S.settings.lastBackup ? 'Última cópia: ' + new Date(S.settings.lastBackup).toLocaleDateString('pt-PT') + '.' : 'Ainda sem cópia de segurança.'}</p>
+    <p class="muted small">Os dados ficam neste telemóvel. ${S.settings.lastBackup ? 'Última cópia: ' + new Date(S.settings.lastBackup).toLocaleDateString(LOC()) + '.' : 'Ainda sem cópia de segurança.'}</p>
     <div class="grid-buttons">
       <button class="btn" data-act="exportBackup">Exportar cópia</button>
       <button class="btn" data-act="import">Importar cópia</button>
@@ -1756,7 +1763,7 @@ function renderChatLog() {
   const msgs = (S.chat?.[ui.chatGroup] || []).filter(m => !blocked.includes(m.pk));
   const me = myPub();
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-  const t = ts => new Date(ts).toLocaleString('pt-PT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const t = ts => new Date(ts).toLocaleString(LOC(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   log.innerHTML = msgs.length ? msgs.map(m => `
     <li class="msg ${m.pk === me ? 'me' : ''}"><div class="bubble">
       ${m.pk === me ? '' : `<b>${esc(m.name || 'Sem nome')} <span class="fp" title="Identificador do dispositivo">#${esc(m.pk.slice(0, 4))}</span>
@@ -1893,7 +1900,7 @@ const NAV_SHORT = { plano: 'Plano', agir: 'Emergência', kit: 'Kit', mapa: 'Mapa
 
 function pageHead(r, title) {
   if (r === 'painel') {
-    const d = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
+    const d = new Date().toLocaleDateString(LOC(), { weekday: 'long', day: 'numeric', month: 'long' });
     return `<header class="page-head"><span class="eyebrow">${esc(d)}</span><h1>O que precisa agora?</h1></header>`;
   }
   if (r === 'emergencia') return '<h1 class="sr-only">Modo emergência</h1>';
@@ -1938,13 +1945,13 @@ function moveNav(k, delta) {
 
 // ---------- Estado da família: a última notícia de cada pessoa ("Estou bem" / "Preciso de ajuda") ----------
 function familyStatus(g) {
-  const msgs = (S.chat?.[g.id] || []).filter(m => /^(Estou bem|PRECISO DE AJUDA)/.test(m.text));
+  const msgs = (S.chat?.[g.id] || []).filter(m => /^(Estou bem|PRECISO DE AJUDA|I'm OK|I NEED HELP)/.test(m.text));
   return liveMembers(g).map(m => {
     const last = msgs.filter(x => (m.pk && x.pk === m.pk) || (x.name && norm(x.name) === norm(m.name))).sort((a, b) => b.ts - a.ts)[0];
-    return { name: m.name, me: !!(m.pk && m.pk === myPub()), state: last ? (last.text.startsWith('PRECISO') ? 'help' : 'ok') : 'none', ts: last?.ts };
+    return { name: m.name, me: !!(m.pk && m.pk === myPub()), state: last ? (/^(PRECISO|I NEED)/.test(last.text) ? 'help' : 'ok') : 'none', ts: last?.ts };
   }).sort((a, b) => ({ help: 0, none: 1, ok: 2 }[a.state] - { help: 0, none: 1, ok: 2 }[b.state]));
 }
-const ago = ts => { const m = Math.round((Date.now() - ts) / 60000); return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : m < 1440 ? `há ${Math.round(m / 60)} h` : new Date(ts).toLocaleDateString('pt-PT'); };
+const ago = ts => { const m = Math.round((Date.now() - ts) / 60000); return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : m < 1440 ? `há ${Math.round(m / 60)} h` : new Date(ts).toLocaleDateString(LOC()); };
 function statusList(g) {
   const st = familyStatus(g);
   if (st.length < 2) return '';
@@ -1965,12 +1972,13 @@ function smsHref(nums, body) {
   return ios ? `sms:/open?addresses=${nums.join(',')}&body=${b}` : `sms:${nums.join(',')}?body=${b}`;
 }
 function statusText(help) {
-  const pos = myPos(), g = S.groups.find(x => x.meetingPoint || hasCoords(x));
-  const time = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+  const pos = myPos(), g = S.groups.find(x => x.meetingPoint || hasCoords(x)), en = LANG === 'en';
+  const time = new Date().toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' });
+  const who = S.settings.myName ? ' (' + S.settings.myName + ')' : '';
   return [
-    `${help ? 'PRECISO DE AJUDA' : 'Estou bem'}${S.settings.myName ? ' (' + S.settings.myName + ')' : ''}, ${time}.`,
-    pos ? `Estou aqui: https://maps.google.com/?q=${pos.lat.toFixed(5)},${pos.lng.toFixed(5)}` : '',
-    g ? `Ponto de encontro: ${g.meetingPoint || fmtCoords(g)}.` : '',
+    en ? `${help ? 'I NEED HELP' : "I'm OK"}${who}, ${time}.` : `${help ? 'PRECISO DE AJUDA' : 'Estou bem'}${who}, ${time}.`,
+    pos ? `${en ? "I'm here" : 'Estou aqui'}: https://maps.google.com/?q=${pos.lat.toFixed(5)},${pos.lng.toFixed(5)}` : '',
+    g ? `${en ? 'Meeting point' : 'Ponto de encontro'}: ${g.meetingPoint || fmtCoords(g)}.` : '',
   ].filter(Boolean).join(' ');
 }
 function sendStatus(help) {
@@ -2151,7 +2159,7 @@ function viewCard() {
     <button class="btn primary" data-act="print">Imprimir</button></div>
   <section class="card family-card">
     <h2>Em emergência: 112</h2>
-    <p class="small">Ponto de encontro e contactos da família · atualizado em ${new Date().toLocaleDateString('pt-PT')}</p>
+    <p class="small">Ponto de encontro e contactos da família · atualizado em ${new Date().toLocaleDateString(LOC())}</p>
     <p class="small"><strong>Rádio Antena 1 (${esc(IPMA_AREAS[S.settings.district])}):</strong> ${esc(RADIO_A1[S.settings.district] || '')}${S.settings.radio ? ` · ${esc(S.settings.radio)}` : ''}</p>
   </section>
   ${S.groups.map(g => `<section class="card family-card">
@@ -2221,7 +2229,7 @@ function render() {
   }).join('');
   const title = r === 'chat' ? 'Mensagens · ' + (findGroup(ui.chatGroup)?.name || '') : ROUTES[r][0];
   $('#page-title').textContent = r === 'chat' ? 'Chat' : NAV_SHORT[r] || ROUTES[r][0];
-  document.title = r === 'painel' ? 'eKit · Preparados, juntos.' : `${title} · eKit`;
+  document.title = tr(r === 'painel' ? 'eKit · Preparados, juntos.' : `${title} · eKit`);
   if (map && r !== 'mapa') { map.remove(); map = null; mapLayer = null; }
   const draft = $('.chat-form input')?.value;
   $('#main').className = 'r-' + r;
@@ -2396,6 +2404,7 @@ document.addEventListener('change', e => {
   if (e.target.type === 'checkbox') { S.settings[k] = e.target.checked; if (k === 'chatNotify' && e.target.checked) enableChatNotifications(); save(); if (k === 'bigText' || k === 'contrast') render(); return; }
   if (k === 'relays') { S.settings.relays = e.target.value.split(/\s+/).filter(u => /^wss?:\/\/\S+$/.test(u)); setTimeout(restartHub, 0); }
   else if (k === 'district') { S.settings.district = e.target.value; S.settings.autoDistrict = false; }
+  else if (k === 'lang') { S.settings.lang = ['pt', 'en'].includes(e.target.value) ? e.target.value : ''; save(); location.reload(); return; }
   else if (k === 'radio') { S.settings.radio = e.target.value.trim().slice(0, 60); save(); return; }
   else S.settings[k] = Math.max(1, Number(e.target.value) || 1);
   save(); render();
@@ -2552,6 +2561,13 @@ function pickOnMap(start, cb) {
   setTimeout(() => m.invalidateSize(), 60);
 }
 
+setLang(S.settings.lang || autoLang());
+watchI18n();
+translateTree(document.body);
+{
+  const b = $('#lang-toggle');
+  if (b) { b.textContent = LANG === 'en' ? 'Português' : 'English'; b.onclick = () => { S.settings.lang = LANG === 'en' ? 'pt' : 'en'; save(); location.reload(); }; }
+}
 render();
 loadPoints();
 if (!S.settings.onboarded) onboarding();
